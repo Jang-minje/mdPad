@@ -4,14 +4,15 @@
         xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         Title="MD Pad" Width="1180" Height="780" MinWidth="760" MinHeight="520"
         Icon="/Assets/App.ico"
-        Background="#F5F2EA"
+        Background="#F5F5F5"
+        Visibility="Hidden"
         AllowDrop="True"
         DragOver="Window_OnDragOver"
         Drop="Window_OnDrop"
         Closing="Window_OnClosing">
     <Window.Resources>
-        <SolidColorBrush x:Key="ChromeBrush" Color="#1E1E1E" />
-        <SolidColorBrush x:Key="ChromeElevatedBrush" Color="#2B2B2B" />
+        <SolidColorBrush x:Key="ChromeBrush" Color="#F3F3F3" />
+        <SolidColorBrush x:Key="ChromeElevatedBrush" Color="#E8E8E8" />
         <SolidColorBrush x:Key="AccentBrush" Color="#D7A21C" />
         <SolidColorBrush x:Key="SurfaceBrush" Color="#FAFAFA" />
         <SolidColorBrush x:Key="SurfaceMutedBrush" Color="#E6E1D8" />

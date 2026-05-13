@@ -103,6 +103,10 @@ public partial class MainWindow : Window
         {
             HideToTray(showTip: false);
         }
+        else
+        {
+            Visibility = Visibility.Visible;
+        }
     }
 
     private void AddNewTab(string title = "Untitled", string markdown = "")
