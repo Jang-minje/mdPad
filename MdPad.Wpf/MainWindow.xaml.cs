@@ -66,6 +66,13 @@ public partial class MainWindow : Window
 
     private async void MainWindow_OnLoaded(object sender, RoutedEventArgs e)
     {
+        string[][] pendingExternalArguments = [];
+        if (System.Windows.Application.Current is App app)
+        {
+            app.ExternalArgumentsReceived += App_OnExternalArgumentsReceived;
+            pendingExternalArguments = app.DrainPendingExternalArguments();
+        }
+
         InitializeTray();
         await PreviewWebView.EnsureCoreWebView2Async();
         PreviewWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
@@ -96,24 +103,30 @@ public partial class MainWindow : Window
         ApplyStartupRegistration(_launchOnLogin);
         ApplyProtocolRegistration();
         UpdateStartupMenu();
-        var protocolArguments = Environment.GetCommandLineArgs()
-            .Where(arg => arg.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var commandLineArguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
+        var protocolArguments = GetProtocolArguments(commandLineArguments).ToList();
         if (Tabs.Count == 0 && protocolArguments.Count == 0)
         {
             AddNewTab();
         }
 
         ApplyMode(_mode);
-        foreach (var protocolArgument in protocolArguments)
+        await ProcessProtocolArgumentsAsync(commandLineArguments);
+        foreach (var pendingArguments in pendingExternalArguments)
         {
-            await OpenProtocolArgumentAsync(protocolArgument);
+            await ProcessProtocolArgumentsAsync(pendingArguments);
         }
 
         if (Environment.GetCommandLineArgs().Any(arg => arg.Equals("--tray", StringComparison.OrdinalIgnoreCase)))
         {
             HideToTray(showTip: false);
         }
+    }
+
+    private async void App_OnExternalArgumentsReceived(string[] args)
+    {
+        ShowFromTray();
+        await ProcessProtocolArgumentsAsync(args);
     }
 
     private void AddNewTab(string title = "Untitled", string markdown = "")
@@ -808,15 +821,26 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ProcessProtocolArgumentsAsync(IEnumerable<string> args)
+    {
+        foreach (var protocolArgument in GetProtocolArguments(args))
+        {
+            await OpenProtocolArgumentAsync(protocolArgument);
+        }
+    }
+
+    private static IEnumerable<string> GetProtocolArguments(IEnumerable<string> args) =>
+        args.Where(arg => arg.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase));
+
     private static ProtocolCommand? ParseProtocolArgument(string rawArgument)
     {
-        var decoded = WebUtility.HtmlDecode(rawArgument.Trim());
+        var decoded = WebUtility.HtmlDecode(rawArgument.Trim().Trim('"'));
         if (!decoded.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        var payload = decoded["mdpad:".Length..].TrimStart('/');
+        var payload = decoded["mdpad:".Length..].TrimStart('/', '\\');
         if (payload.StartsWith("?"))
         {
             payload = payload[1..];
@@ -834,7 +858,7 @@ public partial class MainWindow : Window
         }
 
         var key = payload[..separatorIndex].Trim().ToLowerInvariant();
-        var value = WebUtility.UrlDecode(payload[(separatorIndex + 1)..]);
+        var value = WebUtility.UrlDecode(WebUtility.HtmlDecode(payload[(separatorIndex + 1)..].Trim().Trim('"')));
         if (key is not ("content" or "url") || string.IsNullOrWhiteSpace(value))
         {
             return null;
@@ -845,6 +869,7 @@ public partial class MainWindow : Window
 
     private static async Task<(string Title, string Markdown)> LoadMarkdownFromUrlAsync(string url)
     {
+        url = NormalizeProtocolUrlValue(url);
         if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
             url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
         {
@@ -864,6 +889,47 @@ public partial class MainWindow : Window
         }
 
         return (Path.GetFileName(path), await File.ReadAllTextAsync(path));
+    }
+
+    private static string NormalizeProtocolUrlValue(string value)
+    {
+        var normalized = value.Trim();
+        normalized = normalized.Replace('\\', '/');
+        if (normalized.StartsWith("https/", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://" + normalized["https/".Length..].TrimStart('/');
+        }
+
+        if (normalized.StartsWith("http/", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "http://" + normalized["http/".Length..].TrimStart('/');
+        }
+
+        if (normalized.StartsWith("https//", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://" + normalized["https//".Length..];
+        }
+
+        if (normalized.StartsWith("https:/", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "https://" + normalized["https:/".Length..].TrimStart('/');
+        }
+
+        if (normalized.StartsWith("http//", StringComparison.OrdinalIgnoreCase))
+        {
+            return "http://" + normalized["http//".Length..];
+        }
+
+        if (normalized.StartsWith("http:/", StringComparison.OrdinalIgnoreCase) &&
+            !normalized.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "http://" + normalized["http:/".Length..].TrimStart('/');
+        }
+
+        return normalized;
     }
 
     private static string GetTitleFromPathOrUrl(string value)
@@ -895,6 +961,10 @@ public partial class MainWindow : Window
         }
 
         SaveSession();
+        if (System.Windows.Application.Current is App app)
+        {
+            app.ExternalArgumentsReceived -= App_OnExternalArgumentsReceived;
+        }
         _notifyIcon?.Dispose();
         _lanShareService.Dispose();
     }
