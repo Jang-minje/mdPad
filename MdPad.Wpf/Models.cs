@@ -9,6 +9,12 @@ public enum DocumentMode
     Preview,
 }
 
+public enum ThemeMode
+{
+    Default,
+    Dark,
+}
+
 public sealed class DocumentTab : INotifyPropertyChanged
 {
     private string _title = "Untitled";

@@ -9,6 +9,8 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
+using WpfColor = System.Windows.Media.Color;
+using WpfSolidColorBrush = System.Windows.Media.SolidColorBrush;
 using OpenFileDialog = Microsoft.Win32.OpenFileDialog;
 using SaveFileDialog = Microsoft.Win32.SaveFileDialog;
 
@@ -31,6 +33,7 @@ public partial class MainWindow : Window
     private bool _isPreviewReady;
     private System.Windows.Forms.NotifyIcon? _notifyIcon;
     private DocumentMode _mode = DocumentMode.Edit;
+    private ThemeMode _theme = ThemeMode.Default;
     private EditorStyleSettings _defaultStyle = new();
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
@@ -86,6 +89,7 @@ public partial class MainWindow : Window
 
         InitializeStyleControls();
         RestoreSession();
+        ApplyTheme();
         ApplyStartupRegistration(_launchOnLogin);
         UpdateStartupMenu();
         if (Tabs.Count == 0)
@@ -314,6 +318,10 @@ public partial class MainWindow : Window
 
     private void PreviewModeMenuItem_OnClick(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Preview);
 
+    private void DefaultThemeMenuItem_OnClick(object sender, RoutedEventArgs e) => SetTheme(ThemeMode.Default);
+
+    private void DarkThemeMenuItem_OnClick(object sender, RoutedEventArgs e) => SetTheme(ThemeMode.Dark);
+
     private void ApplyMode(DocumentMode mode)
     {
         _mode = mode;
@@ -352,9 +360,10 @@ public partial class MainWindow : Window
             cache.Markdown != CurrentTab.Markdown ||
             cache.Title != CurrentTab.Title ||
             cache.FontFamily != CurrentTab.FontFamily ||
-            Math.Abs(cache.FontSize - CurrentTab.FontSize) > 0.001)
+            Math.Abs(cache.FontSize - CurrentTab.FontSize) > 0.001 ||
+            cache.Theme != _theme)
         {
-            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _renderer.RenderDocument(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize));
+            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme));
             _previewCache[CurrentTab.Id] = cache;
             cacheChanged = true;
         }
@@ -781,6 +790,7 @@ public partial class MainWindow : Window
     {
         var session = _sessionStateStore.Load();
         _mode = session.Mode;
+        _theme = session.Theme;
         _launchOnLogin = session.LaunchOnLogin;
         _defaultStyle = session.DefaultStyle ?? new EditorStyleSettings();
         _defaultStyle.FontSize = Math.Clamp(_defaultStyle.FontSize, 8, 36);
@@ -826,6 +836,7 @@ public partial class MainWindow : Window
         {
             SelectedTabId = CurrentTab?.Id.ToString("N"),
             Mode = _mode,
+            Theme = _theme,
             LaunchOnLogin = _launchOnLogin,
             DefaultStyle = _defaultStyle,
             Documents = Tabs.Select(tab => new SessionDocument
@@ -980,6 +991,44 @@ public partial class MainWindow : Window
         """);
     }
 
+    private void SetTheme(ThemeMode theme)
+    {
+        _theme = theme;
+        ApplyTheme();
+        _previewCache.Clear();
+        _renderedPreviewTabId = null;
+        if (_mode == DocumentMode.Preview)
+        {
+            RefreshPreview();
+        }
+
+        QueueSessionSave();
+    }
+
+    private void ApplyTheme()
+    {
+        var dark = _theme == ThemeMode.Dark;
+        DefaultThemeMenuItem.IsChecked = !dark;
+        DarkThemeMenuItem.IsChecked = dark;
+
+        Background = Brush(dark ? "#1E1E1E" : "#F5F5F5");
+        MainMenu.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
+        MainMenu.Foreground = Brush(dark ? "#E6E6E6" : "#111827");
+        ToolbarHost.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
+        TabBarHost.Background = Brush(dark ? "#252526" : "#E5E5E5");
+        TabBarHost.BorderBrush = Brush(dark ? "#3E3E42" : "#C8C8C8");
+        StatusHost.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
+        EditorHost.Background = Brush(dark ? "#3B3B3B" : "#FFFFFF");
+        EditorTextBox.Background = Brush(dark ? "#3B3B3B" : "#FFFFFF");
+        EditorTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
+        EditorTextBox.CaretBrush = Brush(dark ? "#FFFFFF" : "#111827");
+        PreviewHost.Background = Brush(dark ? "#1E1E1E" : "#FAFAFA");
+        StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
+        LanStatusTextBlock.Foreground = Brush(dark ? "#BFBFBF" : "#111827");
+    }
+
+    private static WpfSolidColorBrush Brush(string hex) => new((WpfColor)System.Windows.Media.ColorConverter.ConvertFromString(hex));
+
     private void InitializeTray()
     {
         if (_notifyIcon is not null)
@@ -1115,5 +1164,5 @@ public partial class MainWindow : Window
         key.SetValue(name, $"\"{exePath}\" --tray");
     }
 
-    private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, string Html);
+    private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
 }

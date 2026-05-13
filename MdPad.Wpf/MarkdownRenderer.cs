@@ -23,12 +23,21 @@ public sealed class MarkdownRenderer
         _highlightJs = ReadAsset(Path.Combine(assetDirectory, "highlight.min.js"));
     }
 
-    public string RenderDocument(string title, string markdown, string fontFamily, double fontSize)
+    public string RenderDocument(string title, string markdown, string fontFamily, double fontSize, ThemeMode theme)
     {
         var articleHtml = Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
         var titleJson = JsonSerializer.Serialize(string.IsNullOrWhiteSpace(title) ? "MD Pad" : title);
         var fontJson = JsonSerializer.Serialize(fontFamily);
         var articleJson = JsonSerializer.Serialize(articleHtml);
+        var isDark = theme == ThemeMode.Dark;
+        var pageBackground = isDark ? "#1e1e1e" : "#ffffff";
+        var textColor = isDark ? "#d4d4d4" : "#24292f";
+        var mutedColor = isDark ? "#9ca3af" : "#6b7280";
+        var borderColor = isDark ? "#3f3f46" : "#d8dee4";
+        var codeBackground = isDark ? "#252526" : "#f6f8fa";
+        var toolbarBackground = isDark ? "#2d2d30" : "#ffffff";
+        var chipBackground = isDark ? "#1f2937" : "#f6f8fa";
+        var chipText = isDark ? "#d4d4d4" : "#57606a";
 
         return $$"""
         <!doctype html>
@@ -43,8 +52,8 @@ public sealed class MarkdownRenderer
             }
             html, body {
               margin: 0;
-              background: #ffffff;
-              color: #24292f;
+              background: {{pageBackground}};
+              color: {{textColor}};
               font-family: var(--pad-font-family);
               font-size: var(--pad-font-size);
             }
@@ -70,10 +79,34 @@ public sealed class MarkdownRenderer
             .markdown-body li:has(input[type="checkbox"]) {
               cursor: pointer;
             }
+            .markdown-body,
+            .markdown-body h1,
+            .markdown-body h2,
+            .markdown-body h3,
+            .markdown-body h4,
+            .markdown-body h5,
+            .markdown-body h6 {
+              color: {{textColor}};
+            }
+            .markdown-body hr,
+            .markdown-body table tr,
+            .markdown-body table th,
+            .markdown-body table td,
+            .markdown-body blockquote {
+              border-color: {{borderColor}} !important;
+            }
+            .markdown-body table tr {
+              background: {{pageBackground}} !important;
+            }
+            .markdown-body code,
+            .markdown-body tt {
+              background: {{codeBackground}} !important;
+              color: {{textColor}} !important;
+            }
             .markdown-body li:has(input[type="checkbox"]:checked),
             .markdown-body li.mn-checked {
               text-decoration: line-through !important;
-              color: #6b7280 !important;
+              color: {{mutedColor}} !important;
             }
             .markdown-body li:has(input[type="checkbox"]:checked) *,
             .markdown-body li.mn-checked * {
@@ -85,10 +118,10 @@ public sealed class MarkdownRenderer
             }
             .code-wrap {
               margin: 16px 0;
-              border: 1px solid #d8dee4;
+              border: 1px solid {{borderColor}};
               border-radius: 10px;
               overflow: hidden;
-              background: #f6f8fa;
+              background: {{codeBackground}};
             }
             .code-toolbar {
               display: flex;
@@ -96,8 +129,8 @@ public sealed class MarkdownRenderer
               align-items: center;
               gap: 8px;
               padding: 8px 10px;
-              border-bottom: 1px solid #d8dee4;
-              background: #ffffff;
+              border-bottom: 1px solid {{borderColor}};
+              background: {{toolbarBackground}};
             }
             .code-actions {
               display: flex;
@@ -106,10 +139,10 @@ public sealed class MarkdownRenderer
               min-width: 0;
             }
             .code-chip {
-              border: 1px solid #d0d7de;
+              border: 1px solid {{borderColor}};
               border-radius: 999px;
-              background: #f6f8fa;
-              color: #57606a;
+              background: {{chipBackground}};
+              color: {{chipText}};
               padding: 3px 9px;
               font-size: 12px;
               line-height: 1.2;

@@ -44,6 +44,7 @@ public sealed class SessionState
 {
     public string? SelectedTabId { get; set; }
     public DocumentMode Mode { get; set; } = DocumentMode.Edit;
+    public ThemeMode Theme { get; set; } = ThemeMode.Default;
     public bool LaunchOnLogin { get; set; } = true;
     public EditorStyleSettings DefaultStyle { get; set; } = new();
     public List<SessionDocument> Documents { get; set; } = [];
