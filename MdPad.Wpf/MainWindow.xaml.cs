@@ -40,6 +40,7 @@ public partial class MainWindow : Window
     private EditorStyleSettings _defaultStyle = new();
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
+    private ScrollViewer? _tabsScrollViewer;
 
     public MainWindow()
     {
@@ -165,7 +166,67 @@ public partial class MainWindow : Window
         UpdateStyleControlsFromCurrentTab();
         QueuePreviewRefresh();
         UpdateTitle();
+        TabsListBox.ScrollIntoView(TabsListBox.SelectedItem);
+        UpdateTabScrollButtons();
         QueueSessionSave();
+    }
+
+    private void TabsListBox_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        _tabsScrollViewer = FindVisualChildren<ScrollViewer>(TabsListBox).FirstOrDefault();
+        if (_tabsScrollViewer is not null)
+        {
+            _tabsScrollViewer.ScrollChanged += (_, _) => UpdateTabScrollButtons();
+            _tabsScrollViewer.SizeChanged += (_, _) => UpdateTabScrollButtons();
+        }
+
+        UpdateTabScrollButtons();
+    }
+
+    private void TabsListBox_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        ScrollTabsBy(e.Delta > 0 ? -96 : 96);
+        e.Handled = true;
+    }
+
+    private void TabScrollLeftButton_OnClick(object sender, RoutedEventArgs e) => ScrollTabsBy(-180);
+
+    private void TabScrollRightButton_OnClick(object sender, RoutedEventArgs e) => ScrollTabsBy(180);
+
+    private void ScrollTabsBy(double delta)
+    {
+        if (_tabsScrollViewer is null)
+        {
+            _tabsScrollViewer = FindVisualChildren<ScrollViewer>(TabsListBox).FirstOrDefault();
+        }
+
+        if (_tabsScrollViewer is null)
+        {
+            return;
+        }
+
+        var nextOffset = Math.Clamp(_tabsScrollViewer.HorizontalOffset + delta, 0, _tabsScrollViewer.ScrollableWidth);
+        _tabsScrollViewer.ScrollToHorizontalOffset(nextOffset);
+        UpdateTabScrollButtons();
+    }
+
+    private void UpdateTabScrollButtons()
+    {
+        if (!IsLoaded)
+        {
+            return;
+        }
+
+        if (_tabsScrollViewer is null)
+        {
+            _tabsScrollViewer = FindVisualChildren<ScrollViewer>(TabsListBox).FirstOrDefault();
+        }
+
+        var canScroll = _tabsScrollViewer is not null && _tabsScrollViewer.ScrollableWidth > 0.5;
+        TabScrollLeftButton.Visibility = canScroll ? Visibility.Visible : Visibility.Collapsed;
+        TabScrollRightButton.Visibility = canScroll ? Visibility.Visible : Visibility.Collapsed;
+        TabScrollLeftButton.IsEnabled = canScroll && _tabsScrollViewer!.HorizontalOffset > 0.5;
+        TabScrollRightButton.IsEnabled = canScroll && _tabsScrollViewer!.HorizontalOffset < _tabsScrollViewer.ScrollableWidth - 0.5;
     }
 
     private void LoadCurrentTabIntoEditor()
