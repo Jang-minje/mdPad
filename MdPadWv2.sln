@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MdPad.Wpf", "MdPad.Wpf\MdPad.Wpf.csproj", "{BDFE079A-0ED2-421E-A206-CB426B8B02DD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BDFE079A-0ED2-421E-A206-CB426B8B02DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDFE079A-0ED2-421E-A206-CB426B8B02DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDFE079A-0ED2-421E-A206-CB426B8B02DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDFE079A-0ED2-421E-A206-CB426B8B02DD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

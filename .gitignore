@@ -1,0 +1,16 @@
+bin/
+obj/
+release/
+.vs/
+.vscode/
+*.user
+*.suo
+*.cache
+*.log
+*.tmp
+*.bak
+*.nupkg
+TestResults/
+*.WebView2/
+**/EBWebView/
+**/MdPad.Wpf.exe.WebView2/
