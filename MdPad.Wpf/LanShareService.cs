@@ -18,6 +18,7 @@ public sealed class LanShareService : IDisposable
     private TcpListener? _listener;
     private UdpClient? _udpBroadcast;
     private UdpClient? _udpReceiver;
+    private bool _disposed;
     private int _listenPort;
     private IPAddress _localAddress = IPAddress.Loopback;
 
@@ -61,26 +62,55 @@ public sealed class LanShareService : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        try
+        {
+            _cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         _listener?.Stop();
         _udpBroadcast?.Dispose();
         _udpReceiver?.Dispose();
-        _cts.Dispose();
     }
 
     private async Task BroadcastLoopAsync(CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            await BroadcastHelloAsync();
-            CleanupPeers();
-            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await BroadcastHelloAsync();
+                CleanupPeers();
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (SocketException) when (cancellationToken.IsCancellationRequested || _disposed)
+        {
         }
     }
 
     private async Task BroadcastHelloAsync()
     {
         if (_udpBroadcast is null)
+        {
+            return;
+        }
+
+        if (_disposed)
         {
             return;
         }
@@ -97,25 +127,37 @@ public sealed class LanShareService : IDisposable
             return;
         }
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var result = await _udpReceiver.ReceiveAsync(cancellationToken);
-            var payload = JsonSerializer.Deserialize<LanHelloPayload>(Encoding.UTF8.GetString(result.Buffer));
-            if (payload is null || payload.Id == _localId)
+            while (!cancellationToken.IsCancellationRequested)
             {
-                continue;
-            }
+                var result = await _udpReceiver.ReceiveAsync(cancellationToken);
+                var payload = JsonSerializer.Deserialize<LanHelloPayload>(Encoding.UTF8.GetString(result.Buffer));
+                if (payload is null || payload.Id == _localId)
+                {
+                    continue;
+                }
 
-            _peers[payload.Id] = new PeerEntry
-            {
-                Id = payload.Id,
-                Name = payload.Name,
-                Address = payload.Address,
-                Port = payload.Port,
-                DisplayName = $"{payload.Name} ({payload.Address})",
-                LastSeenAt = DateTime.UtcNow,
-            };
-            PeersChanged?.Invoke();
+                _peers[payload.Id] = new PeerEntry
+                {
+                    Id = payload.Id,
+                    Name = payload.Name,
+                    Address = payload.Address,
+                    Port = payload.Port,
+                    DisplayName = $"{payload.Name} ({payload.Address})",
+                    LastSeenAt = DateTime.UtcNow,
+                };
+                PeersChanged?.Invoke();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (SocketException) when (cancellationToken.IsCancellationRequested || _disposed)
+        {
         }
     }
 
@@ -126,20 +168,32 @@ public sealed class LanShareService : IDisposable
             return;
         }
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            var client = await _listener.AcceptTcpClientAsync(cancellationToken);
-            _ = Task.Run(async () =>
+            while (!cancellationToken.IsCancellationRequested)
             {
-                using var ownedClient = client;
-                using var reader = new StreamReader(ownedClient.GetStream(), Encoding.UTF8);
-                var json = await reader.ReadToEndAsync();
-                var payload = JsonSerializer.Deserialize<LanDocumentPayload>(json);
-                if (payload is not null)
+                var client = await _listener.AcceptTcpClientAsync(cancellationToken);
+                _ = Task.Run(async () =>
                 {
-                    DocumentReceived?.Invoke(payload.Title, payload.Markdown);
-                }
-            }, cancellationToken);
+                    using var ownedClient = client;
+                    using var reader = new StreamReader(ownedClient.GetStream(), Encoding.UTF8);
+                    var json = await reader.ReadToEndAsync(cancellationToken);
+                    var payload = JsonSerializer.Deserialize<LanDocumentPayload>(json);
+                    if (payload is not null)
+                    {
+                        DocumentReceived?.Invoke(payload.Title, payload.Markdown);
+                    }
+                }, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (SocketException) when (cancellationToken.IsCancellationRequested || _disposed)
+        {
         }
     }
 

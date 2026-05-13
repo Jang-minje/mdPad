@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private bool _launchOnLogin = true;
     private bool _isPreviewReady;
     private System.Windows.Forms.NotifyIcon? _notifyIcon;
+    private System.Windows.Forms.ToolStripMenuItem? _trayStartupMenuItem;
     private DocumentMode _mode = DocumentMode.Edit;
     private ThemeMode _theme = ThemeMode.Default;
     private EditorStyleSettings _defaultStyle = new();
@@ -1088,6 +1089,20 @@ public partial class MainWindow : Window
             ShowFromTray();
             AddNewTab();
         }));
+        _trayStartupMenuItem = new System.Windows.Forms.ToolStripMenuItem("윈도우 시작 시 자동 실행")
+        {
+            CheckOnClick = true,
+        };
+        _trayStartupMenuItem.CheckedChanged += (_, _) => Dispatcher.Invoke(() =>
+        {
+            if (_isUpdatingStartupMenu || _trayStartupMenuItem is null)
+            {
+                return;
+            }
+
+            SetLaunchOnLogin(_trayStartupMenuItem.Checked);
+        });
+        menu.Items.Add(_trayStartupMenuItem);
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("종료", null, (_, _) => Dispatcher.Invoke(ExitApplication));
 
@@ -1155,8 +1170,7 @@ public partial class MainWindow : Window
         }
 
         _launchOnLogin = true;
-        ApplyStartupRegistration(true);
-        QueueSessionSave();
+        SetLaunchOnLogin(true);
     }
 
     private void StartupMenuItem_OnUnchecked(object sender, RoutedEventArgs e)
@@ -1167,7 +1181,14 @@ public partial class MainWindow : Window
         }
 
         _launchOnLogin = false;
-        ApplyStartupRegistration(false);
+        SetLaunchOnLogin(false);
+    }
+
+    private void SetLaunchOnLogin(bool enabled)
+    {
+        _launchOnLogin = enabled;
+        ApplyStartupRegistration(enabled);
+        UpdateStartupMenu();
         QueueSessionSave();
     }
 
@@ -1177,6 +1198,10 @@ public partial class MainWindow : Window
         try
         {
             StartupMenuItem.IsChecked = _launchOnLogin;
+            if (_trayStartupMenuItem is not null)
+            {
+                _trayStartupMenuItem.Checked = _launchOnLogin;
+            }
         }
         finally
         {
