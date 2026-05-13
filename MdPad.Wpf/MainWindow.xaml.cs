@@ -1288,6 +1288,9 @@ public partial class MainWindow : Window
         EditorTextBox.Foreground = editorForeground;
         EditorTextBox.CaretBrush = editorForeground;
         PreviewHost.Background = Brush(dark ? "#1E1E1E" : "#FAFAFA");
+        PreviewWebView.DefaultBackgroundColor = dark
+            ? System.Drawing.Color.FromArgb(255, 13, 17, 23)
+            : System.Drawing.Color.FromArgb(255, 250, 250, 250);
         StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
         LanStatusTextBlock.Foreground = Brush(dark ? "#BFBFBF" : "#111827");
 

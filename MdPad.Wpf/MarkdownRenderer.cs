@@ -11,14 +11,16 @@ public sealed class MarkdownRenderer
         .UseAdvancedExtensions()
         .Build();
 
-    private readonly string _githubCss;
+    private readonly string _githubLightCss;
+    private readonly string _githubDarkCss;
     private readonly string _highlightCss;
     private readonly string _highlightJs;
 
     public MarkdownRenderer()
     {
         var assetDirectory = Path.Combine(AppContext.BaseDirectory, "Assets");
-        _githubCss = ReadAsset(Path.Combine(assetDirectory, "github-markdown-light.min.css"));
+        _githubLightCss = ReadAsset(Path.Combine(assetDirectory, "github-markdown-light.min.css"));
+        _githubDarkCss = ReadAsset(Path.Combine(assetDirectory, "github-markdown-dark.min.css"));
         _highlightCss = ReadAsset(Path.Combine(assetDirectory, "highlight-github.min.css"));
         _highlightJs = ReadAsset(Path.Combine(assetDirectory, "highlight.min.js"));
     }
@@ -30,14 +32,21 @@ public sealed class MarkdownRenderer
         var fontJson = JsonSerializer.Serialize(fontFamily);
         var articleJson = JsonSerializer.Serialize(articleHtml);
         var isDark = theme == ThemeMode.Dark;
-        var pageBackground = isDark ? "#1e1e1e" : "#ffffff";
-        var textColor = isDark ? "#d4d4d4" : "#24292f";
-        var mutedColor = isDark ? "#9ca3af" : "#6b7280";
-        var borderColor = isDark ? "#3f3f46" : "#d8dee4";
-        var codeBackground = isDark ? "#252526" : "#f6f8fa";
-        var toolbarBackground = isDark ? "#2d2d30" : "#ffffff";
-        var chipBackground = isDark ? "#1f2937" : "#f6f8fa";
-        var chipText = isDark ? "#d4d4d4" : "#57606a";
+        var pageBackground = isDark ? "#0d1117" : "#ffffff";
+        var textColor = isDark ? "#e6edf3" : "#24292f";
+        var mutedColor = isDark ? "#8b949e" : "#6b7280";
+        var borderColor = isDark ? "#30363d" : "#d8dee4";
+        var tableAltBackground = isDark ? "#161b22" : "#f6f8fa";
+        var inlineCodeBackground = isDark ? "#6e768166" : "#f6f8fa";
+        var codeBackground = isDark ? "#161b22" : "#f6f8fa";
+        var toolbarBackground = isDark ? "#0d1117" : "#ffffff";
+        var chipBackground = isDark ? "#21262d" : "#f6f8fa";
+        var chipText = isDark ? "#e6edf3" : "#57606a";
+        var linkColor = isDark ? "#58a6ff" : "#0969da";
+        var quoteColor = isDark ? "#8b949e" : "#59636e";
+        var markBackground = isDark ? "#9e6a03" : "#fff8c5";
+        var markText = isDark ? "#e6edf3" : "#1f2328";
+        var githubCss = isDark && !string.IsNullOrWhiteSpace(_githubDarkCss) ? _githubDarkCss : _githubLightCss;
 
         return $$"""
         <!doctype html>
@@ -65,6 +74,8 @@ public sealed class MarkdownRenderer
               font-family: var(--pad-font-family) !important;
               font-size: var(--pad-font-size) !important;
             }
+            {{githubCss}}
+            {{_highlightCss}}
             .markdown-body table {
               display: block;
               width: max-content;
@@ -86,7 +97,24 @@ public sealed class MarkdownRenderer
             .markdown-body h4,
             .markdown-body h5,
             .markdown-body h6 {
-              color: {{textColor}};
+              color: {{textColor}} !important;
+              background: transparent !important;
+            }
+            .markdown-body {
+              color-scheme: {{(isDark ? "dark" : "light")}};
+              background: {{pageBackground}} !important;
+            }
+            .markdown-body a {
+              color: {{linkColor}} !important;
+            }
+            .markdown-body h1,
+            .markdown-body h2 {
+              border-bottom-color: {{borderColor}} !important;
+            }
+            .markdown-body h6,
+            .markdown-body blockquote,
+            .markdown-body .footnotes {
+              color: {{quoteColor}} !important;
             }
             .markdown-body hr,
             .markdown-body table tr,
@@ -98,10 +126,27 @@ public sealed class MarkdownRenderer
             .markdown-body table tr {
               background: {{pageBackground}} !important;
             }
+            .markdown-body table tr:nth-child(2n),
+            .markdown-body table th {
+              background: {{tableAltBackground}} !important;
+            }
+            .markdown-body mark {
+              background: {{markBackground}} !important;
+              color: {{markText}} !important;
+            }
             .markdown-body code,
             .markdown-body tt {
+              background: {{inlineCodeBackground}} !important;
+              color: {{textColor}} !important;
+            }
+            .markdown-body pre,
+            .markdown-body .highlight pre {
               background: {{codeBackground}} !important;
               color: {{textColor}} !important;
+            }
+            .markdown-body pre code,
+            .markdown-body pre tt {
+              background: transparent !important;
             }
             .markdown-body li:has(input[type="checkbox"]:checked),
             .markdown-body li.mn-checked {
@@ -166,8 +211,7 @@ public sealed class MarkdownRenderer
               border: 0 !important;
               border-radius: 0 !important;
             }
-            {{_githubCss}}
-            {{_highlightCss}}
+            {{DarkHighlightCss(isDark)}}
           </style>
         </head>
         <body>
@@ -312,5 +356,77 @@ public sealed class MarkdownRenderer
     private static string ReadAsset(string path)
     {
         return File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+    }
+
+    private static string DarkHighlightCss(bool isDark)
+    {
+        if (!isDark)
+        {
+            return string.Empty;
+        }
+
+        return """
+        .hljs {
+          color: #e6edf3 !important;
+          background: #161b22 !important;
+        }
+        .hljs-comment,
+        .hljs-quote {
+          color: #8b949e !important;
+        }
+        .hljs-keyword,
+        .hljs-selector-tag,
+        .hljs-subst {
+          color: #ff7b72 !important;
+        }
+        .hljs-number,
+        .hljs-literal,
+        .hljs-variable,
+        .hljs-template-variable,
+        .hljs-tag .hljs-attr {
+          color: #79c0ff !important;
+        }
+        .hljs-string,
+        .hljs-doctag {
+          color: #a5d6ff !important;
+        }
+        .hljs-title,
+        .hljs-section,
+        .hljs-selector-id {
+          color: #d2a8ff !important;
+        }
+        .hljs-type,
+        .hljs-class .hljs-title {
+          color: #ffa657 !important;
+        }
+        .hljs-tag,
+        .hljs-name,
+        .hljs-attribute {
+          color: #7ee787 !important;
+        }
+        .hljs-regexp,
+        .hljs-link {
+          color: #a5d6ff !important;
+        }
+        .hljs-symbol,
+        .hljs-bullet {
+          color: #f2cc60 !important;
+        }
+        .hljs-built_in,
+        .hljs-builtin-name {
+          color: #ffa657 !important;
+        }
+        .hljs-meta {
+          color: #8b949e !important;
+        }
+        .hljs-deletion {
+          color: #ffdcd7 !important;
+          background-color: #67060c !important;
+        }
+        .hljs-addition {
+          color: #aff5b4 !important;
+          background-color: #033a16 !important;
+        }
+        """;
     }
 }
