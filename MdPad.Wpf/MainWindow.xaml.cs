@@ -1011,6 +1011,20 @@ public partial class MainWindow : Window
         DefaultThemeMenuItem.IsChecked = !dark;
         DarkThemeMenuItem.IsChecked = dark;
 
+        SetBrush("ChromeBrush", dark ? "#1E1E1E" : "#F3F3F3");
+        SetBrush("MenuForegroundBrush", dark ? "#E6E6E6" : "#111827");
+        SetBrush("ToolbarButtonBackgroundBrush", dark ? "#2B2B2B" : "#F8F8F8");
+        SetBrush("ToolbarButtonHoverBrush", dark ? "#3A3A3A" : "#E7E7E7");
+        SetBrush("ToolbarButtonPressedBrush", dark ? "#202020" : "#D8D8D8");
+        SetBrush("ToolbarButtonBorderBrush", dark ? "#4A4A4A" : "#B8B8B8");
+        SetBrush("ToolbarButtonForegroundBrush", dark ? "#E6E6E6" : "#111827");
+        SetBrush("ToolbarLabelBrush", dark ? "#CFCFCF" : "#404040");
+        SetBrush("TabItemBackgroundBrush", dark ? "#2D2D2D" : "#ECECEC");
+        SetBrush("TabItemForegroundBrush", dark ? "#DCDCDC" : "#111827");
+        SetBrush("TabItemSelectedBackgroundBrush", dark ? "#4D5D5D" : "#FFFFFF");
+        SetBrush("TabItemSelectedForegroundBrush", dark ? "#FFFFFF" : "#111827");
+        SetBrush("TabItemBorderBrush", dark ? "#555555" : "#B8B8B8");
+
         Background = Brush(dark ? "#1E1E1E" : "#F5F5F5");
         MainMenu.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
         MainMenu.Foreground = Brush(dark ? "#E6E6E6" : "#111827");
@@ -1018,13 +1032,44 @@ public partial class MainWindow : Window
         TabBarHost.Background = Brush(dark ? "#252526" : "#E5E5E5");
         TabBarHost.BorderBrush = Brush(dark ? "#3E3E42" : "#C8C8C8");
         StatusHost.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
-        EditorHost.Background = Brush(dark ? "#3B3B3B" : "#FFFFFF");
-        EditorTextBox.Background = Brush(dark ? "#3B3B3B" : "#FFFFFF");
-        EditorTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
-        EditorTextBox.CaretBrush = Brush(dark ? "#FFFFFF" : "#111827");
+        var editorBackground = Brush(dark ? "#3B3B3B" : "#FFFFFF");
+        var editorForeground = Brush(dark ? "#F0F0F0" : "#111827");
+        EditorHost.Background = editorBackground;
+        EditorTextBox.Background = editorBackground;
+        EditorTextBox.Foreground = editorForeground;
+        EditorTextBox.CaretBrush = editorForeground;
         PreviewHost.Background = Brush(dark ? "#1E1E1E" : "#FAFAFA");
         StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
         LanStatusTextBlock.Foreground = Brush(dark ? "#BFBFBF" : "#111827");
+
+        foreach (var comboBox in FindVisualChildren<System.Windows.Controls.ComboBox>(ToolbarHost))
+        {
+            comboBox.Background = Brush(dark ? "#2B2B2B" : "#FFFFFF");
+            comboBox.Foreground = Brush(dark ? "#E6E6E6" : "#111827");
+            comboBox.BorderBrush = Brush(dark ? "#4A4A4A" : "#A8A8A8");
+        }
+    }
+
+    private void SetBrush(string key, string hex)
+    {
+        Resources[key] = Brush(hex);
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+    {
+        for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(parent); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(parent, i);
+            if (child is T typed)
+            {
+                yield return typed;
+            }
+
+            foreach (var descendant in FindVisualChildren<T>(child))
+            {
+                yield return descendant;
+            }
+        }
     }
 
     private static WpfSolidColorBrush Brush(string hex) => new((WpfColor)System.Windows.Media.ColorConverter.ConvertFromString(hex));
