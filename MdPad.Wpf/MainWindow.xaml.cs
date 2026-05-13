@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -92,13 +94,22 @@ public partial class MainWindow : Window
         RestoreSession();
         ApplyTheme();
         ApplyStartupRegistration(_launchOnLogin);
+        ApplyProtocolRegistration();
         UpdateStartupMenu();
-        if (Tabs.Count == 0)
+        var protocolArguments = Environment.GetCommandLineArgs()
+            .Where(arg => arg.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (Tabs.Count == 0 && protocolArguments.Count == 0)
         {
             AddNewTab();
         }
 
         ApplyMode(_mode);
+        foreach (var protocolArgument in protocolArguments)
+        {
+            await OpenProtocolArgumentAsync(protocolArgument);
+        }
+
         if (Environment.GetCommandLineArgs().Any(arg => arg.Equals("--tray", StringComparison.OrdinalIgnoreCase)))
         {
             HideToTray(showTip: false);
@@ -767,6 +778,112 @@ public partial class MainWindow : Window
         return string.Join(Environment.NewLine, result);
     }
 
+    private async Task OpenProtocolArgumentAsync(string rawArgument)
+    {
+        try
+        {
+            var command = ParseProtocolArgument(rawArgument);
+            if (command is null)
+            {
+                StatusTextBlock.Text = "지원하지 않는 mdpad 프로토콜입니다.";
+                return;
+            }
+
+            switch (command.Value.Kind)
+            {
+                case "content":
+                    AddNewTab("프로토콜 문서", command.Value.Value);
+                    StatusTextBlock.Text = "프로토콜 내용으로 새 탭을 열었습니다.";
+                    break;
+                case "url":
+                    var (title, markdown) = await LoadMarkdownFromUrlAsync(command.Value.Value);
+                    AddNewTab(title, markdown);
+                    StatusTextBlock.Text = $"URL 문서를 열었습니다: {command.Value.Value}";
+                    break;
+            }
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"프로토콜 처리 실패: {exception.Message}";
+        }
+    }
+
+    private static ProtocolCommand? ParseProtocolArgument(string rawArgument)
+    {
+        var decoded = WebUtility.HtmlDecode(rawArgument.Trim());
+        if (!decoded.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var payload = decoded["mdpad:".Length..].TrimStart('/');
+        if (payload.StartsWith("?"))
+        {
+            payload = payload[1..];
+        }
+
+        if (payload.Contains('?'))
+        {
+            payload = payload[(payload.IndexOf('?') + 1)..];
+        }
+
+        var separatorIndex = payload.IndexOf('=');
+        if (separatorIndex <= 0)
+        {
+            return null;
+        }
+
+        var key = payload[..separatorIndex].Trim().ToLowerInvariant();
+        var value = WebUtility.UrlDecode(payload[(separatorIndex + 1)..]);
+        if (key is not ("content" or "url") || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return new ProtocolCommand(key, value);
+    }
+
+    private static async Task<(string Title, string Markdown)> LoadMarkdownFromUrlAsync(string url)
+    {
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            using var client = new HttpClient();
+            var markdown = await client.GetStringAsync(url);
+            return (GetTitleFromPathOrUrl(url), markdown);
+        }
+
+        string path;
+        if (url.StartsWith("file://", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(url, UriKind.Absolute, out var fileUri))
+        {
+            path = fileUri.LocalPath;
+        }
+        else
+        {
+            path = url;
+        }
+
+        return (Path.GetFileName(path), await File.ReadAllTextAsync(path));
+    }
+
+    private static string GetTitleFromPathOrUrl(string value)
+    {
+        try
+        {
+            if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            {
+                var fileName = Path.GetFileName(uri.LocalPath);
+                return string.IsNullOrWhiteSpace(fileName) ? "URL 문서" : fileName;
+            }
+
+            return Path.GetFileName(value);
+        }
+        catch
+        {
+            return "URL 문서";
+        }
+    }
+
     private void Window_OnClosing(object? sender, CancelEventArgs e)
     {
         if (!_isExitRequested)
@@ -1234,5 +1351,23 @@ public partial class MainWindow : Window
         key.SetValue(name, $"\"{exePath}\" --tray");
     }
 
+    private static void ApplyProtocolRegistration()
+    {
+        var exePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+        if (string.IsNullOrWhiteSpace(exePath))
+        {
+            return;
+        }
+
+        using var root = Registry.CurrentUser.CreateSubKey(@"Software\Classes\mdpad");
+        root?.SetValue(null, "URL:MD Pad Protocol");
+        root?.SetValue("URL Protocol", string.Empty);
+
+        using var command = Registry.CurrentUser.CreateSubKey(@"Software\Classes\mdpad\shell\open\command");
+        command?.SetValue(null, $"\"{exePath}\" \"%1\"");
+    }
+
     private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
+
+    private readonly record struct ProtocolCommand(string Kind, string Value);
 }

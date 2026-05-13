@@ -23,6 +23,9 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayName" "${APP_NAME}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MdPadWv2" '"$INSTDIR\${APP_EXE}" --tray'
+  WriteRegStr HKCU "Software\Classes\mdpad" "" "URL:MD Pad Protocol"
+  WriteRegStr HKCU "Software\Classes\mdpad" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\mdpad\shell\open\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
   Exec "$INSTDIR\${APP_EXE}"
 SectionEnd
 
@@ -31,6 +34,7 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${APP_NAME}\${APP_NAME}.lnk"
   RMDir "$SMPROGRAMS\${APP_NAME}"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MdPadWv2"
+  DeleteRegKey HKCU "Software\Classes\mdpad"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
   RMDir /r "$INSTDIR"
 SectionEnd
