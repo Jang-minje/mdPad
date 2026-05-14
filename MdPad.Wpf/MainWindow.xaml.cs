@@ -1554,11 +1554,11 @@ public partial class MainWindow : Window
         return string.Join(Environment.NewLine, result);
     }
 
-    private void CollapseAllCodeButton_OnClick(object sender, RoutedEventArgs e) => SetAllCodeBlocksCollapsed(true);
+    private async void CollapseAllCodeButton_OnClick(object sender, RoutedEventArgs e) => await SetAllCodeBlocksCollapsedAsync(true);
 
-    private void ExpandAllCodeButton_OnClick(object sender, RoutedEventArgs e) => SetAllCodeBlocksCollapsed(false);
+    private async void ExpandAllCodeButton_OnClick(object sender, RoutedEventArgs e) => await SetAllCodeBlocksCollapsedAsync(false);
 
-    private void SetAllCodeBlocksCollapsed(bool collapsed)
+    private async Task SetAllCodeBlocksCollapsedAsync(bool collapsed)
     {
         if (CurrentTab is null)
         {
@@ -1579,14 +1579,24 @@ public partial class MainWindow : Window
 
         CurrentTab.CodeBlockStates = states;
         _previewCache.Remove(CurrentTab.Id);
-        _renderedPreviewTabId = null;
         QueueSessionSave();
+
+        StatusTextBlock.Text = collapsed ? "코드블럭을 모두 접었습니다." : "코드블럭을 모두 펼쳤습니다.";
+
+        if (_mode is DocumentMode.Preview or DocumentMode.Split &&
+            _isPreviewReady &&
+            PreviewWebView.CoreWebView2 is not null &&
+            _renderedPreviewTabId == CurrentTab.Id)
+        {
+            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadSetAllCodeCollapsed?.({(collapsed ? "true" : "false")});");
+            return;
+        }
+
+        _renderedPreviewTabId = null;
         if (_mode is DocumentMode.Preview or DocumentMode.Split)
         {
             RefreshPreview();
         }
-
-        StatusTextBlock.Text = collapsed ? "코드블럭을 모두 접었습니다." : "코드블럭을 모두 펼쳤습니다.";
     }
 
     private void UpdateCodeBlockState(string? key, Action<CodeBlockViewState> update)
@@ -1660,10 +1670,11 @@ public partial class MainWindow : Window
 
     private static string ComputeCodeBlockContentHash(string text)
     {
+        var normalized = (text ?? string.Empty).Replace("\r\n", "\n").Replace("\r", "\n");
         unchecked
         {
             uint hash = 2166136261;
-            foreach (var ch in text ?? string.Empty)
+            foreach (var ch in normalized)
             {
                 hash ^= ch;
                 hash *= 16777619;

@@ -326,7 +326,7 @@ public sealed class MarkdownRenderer
                 if (!pre || pre.parentElement?.classList.contains('code-wrap')) return;
                 const languageClass = Array.from(code.classList).find((item) => item.startsWith('language-')) || 'language-text';
                 const language = languageClass.replace(/^language-/, '') || 'text';
-                const text = code.textContent || '';
+                const text = (code.textContent || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
                 const currentIndex = codeIndex++;
                 const stateKey = `${currentIndex}:${codeHash(text)}`;
                 const state = payload.codeStates?.[stateKey] || {};
@@ -343,6 +343,7 @@ public sealed class MarkdownRenderer
                 const toggle = document.createElement('button');
                 toggle.type = 'button';
                 toggle.className = 'code-chip';
+                toggle.dataset.role = 'collapse-toggle';
                 toggle.textContent = '접기';
                 const wrapButton = document.createElement('button');
                 wrapButton.type = 'button';
@@ -480,6 +481,15 @@ public sealed class MarkdownRenderer
                 const nodes = [];
                 while (walker.nextNode()) nodes.push(walker.currentNode);
                 nodes.forEach((node) => highlightTextNode(node, queryLower));
+              };
+              window.mdPadSetAllCodeCollapsed = (collapsed) => {
+                article.querySelectorAll('.code-wrap').forEach((wrap) => {
+                  const toggle = wrap.querySelector('button[data-role="collapse-toggle"]');
+                  const key = wrap.dataset.stateKey || '';
+                  if (!toggle) return;
+                  setCollapsedVisual(wrap, toggle, !!collapsed);
+                  post({ type: 'set-code-collapsed', key, collapsed: !!collapsed });
+                });
               };
               window.addEventListener('wheel', (event) => {
                 if (!event.ctrlKey) return;
