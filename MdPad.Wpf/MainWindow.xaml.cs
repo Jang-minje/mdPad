@@ -995,8 +995,12 @@ public partial class MainWindow : Window
         var dark = _theme == ThemeMode.Dark;
         var foreground = Brush(dark ? "#F0F0F0" : "#111827");
         var background = Brush(dark ? "#252526" : "#FFFFFF");
-        var inputBackground = Brush(dark ? "#1E1E1E" : "#FFFFFF");
-        var border = Brush(dark ? "#555555" : "#B8B8B8");
+        var inputBackground = Brush("#FFFFFF");
+        var inputForeground = Brush("#111827");
+        var border = Brush(dark ? "#6B7280" : "#B8B8B8");
+        var comboItemStyle = new Style(typeof(ComboBoxItem));
+        comboItemStyle.Setters.Add(new Setter(System.Windows.Controls.Control.BackgroundProperty, inputBackground));
+        comboItemStyle.Setters.Add(new Setter(System.Windows.Controls.Control.ForegroundProperty, inputForeground));
 
         var fontComboBox = new System.Windows.Controls.ComboBox
         {
@@ -1007,8 +1011,9 @@ public partial class MainWindow : Window
             MinWidth = 320,
             Height = 30,
             Background = inputBackground,
-            Foreground = foreground,
+            Foreground = inputForeground,
             BorderBrush = border,
+            ItemContainerStyle = comboItemStyle,
         };
 
         var sizeComboBox = new System.Windows.Controls.ComboBox
@@ -1020,8 +1025,9 @@ public partial class MainWindow : Window
             MinWidth = 120,
             Height = 30,
             Background = inputBackground,
-            Foreground = foreground,
+            Foreground = inputForeground,
             BorderBrush = border,
+            ItemContainerStyle = comboItemStyle,
         };
 
         var applyButton = new System.Windows.Controls.Button { Content = "적용", Width = 84, Height = 30, IsDefault = true, Margin = new Thickness(0, 0, 6, 0) };

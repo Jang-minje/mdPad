@@ -312,15 +312,19 @@ public sealed class MarkdownRenderer
                   case_insensitive: true,
                   contains: [
                     { className: 'section', begin: '^[0-9]{3}', relevance: 10 },
-                    { className: 'symbol', begin: '\\x1F[a-z0-9]', relevance: 8 },
-                    { className: 'meta', begin: '[\\x1E\\x1D]', relevance: 5 },
+                    { className: 'symbol', begin: '\\uE01F[a-z0-9]', relevance: 8 },
+                    { className: 'meta', begin: '[\\uE01E\\uE01D]', relevance: 5 },
                     { className: 'number', begin: '\\b[0-9]{2}\\b', relevance: 1 }
                   ]
                 }));
               };
+              const toMarcDisplayText = (text) => (text || '')
+                .replace(/\x1F/g, '\uE01F')
+                .replace(/\x1E/g, '\uE01E')
+                .replace(/\x1D/g, '\uE01D');
               const visualizeMarcControls = (root) => {
                 const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-                  acceptNode: (node) => /[\x1F\x1E\x1D]/.test(node.nodeValue || '')
+                  acceptNode: (node) => /[\x1F\x1E\x1D\uE01F\uE01E\uE01D]/.test(node.nodeValue || '')
                     ? NodeFilter.FILTER_ACCEPT
                     : NodeFilter.FILTER_REJECT
                 });
@@ -330,10 +334,10 @@ public sealed class MarkdownRenderer
                   const text = node.nodeValue || '';
                   const fragment = document.createDocumentFragment();
                   for (const ch of text) {
-                    if (ch === '\x1F' || ch === '\x1E' || ch === '\x1D') {
+                    if (ch === '\x1F' || ch === '\x1E' || ch === '\x1D' || ch === '\uE01F' || ch === '\uE01E' || ch === '\uE01D') {
                       const span = document.createElement('span');
                       span.className = 'marc-control';
-                      span.textContent = ch === '\x1F' ? '␟' : ch === '\x1E' ? '␞' : '␝';
+                      span.textContent = ch === '\x1F' || ch === '\uE01F' ? '␟' : ch === '\x1E' || ch === '\uE01E' ? '␞' : '␝';
                       fragment.appendChild(span);
                     } else {
                       fragment.appendChild(document.createTextNode(ch));
@@ -466,6 +470,7 @@ public sealed class MarkdownRenderer
                 wrap.appendChild(pre);
                 setCollapsedVisual(wrap, toggle, !!(state.collapsed ?? state.Collapsed));
                 setWrappedVisual(wrap, !!(state.wrapped ?? state.Wrapped));
+                if (normalizedLanguage === 'marc') code.textContent = toMarcDisplayText(text);
                 if (window.hljs) window.hljs.highlightElement(code);
                 if (normalizedLanguage === 'marc') visualizeMarcControls(code);
               });
