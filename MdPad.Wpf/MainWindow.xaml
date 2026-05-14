@@ -405,7 +405,7 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="TabRoot" MinWidth="145" MaxWidth="250" Height="28" Margin="0,0,-1,0" Padding="10,0,6,0" Background="{DynamicResource TabItemBackgroundBrush}" BorderBrush="{DynamicResource TabItemBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0">
+                            <Border x:Name="TabRoot" MinWidth="145" MaxWidth="250" Height="28" Margin="0,0,-1,0" Padding="10,0,6,0" Background="{DynamicResource TabItemBackgroundBrush}" BorderBrush="{DynamicResource TabItemBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0" MouseLeftButtonDown="TabRoot_OnMouseLeftButtonDown">
                                 <Border.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="탭 닫기" Click="TabContextCloseMenuItem_OnClick" />

@@ -189,15 +189,17 @@ public sealed class MarkdownRenderer
               align-items: center;
               gap: 8px;
               min-width: 0;
-              flex: 1;
+              flex: 1 1 auto;
             }
             .code-actions {
               display: flex;
               align-items: center;
               gap: 6px;
               min-width: 0;
+              flex: 0 0 auto;
             }
             .code-title {
+              flex: 1 1 auto;
               min-width: 0;
               overflow: hidden;
               text-overflow: ellipsis;
@@ -509,7 +511,7 @@ public sealed class MarkdownRenderer
               };
               const highlightTextNode = (node, queryLower) => {
                 const text = node.nodeValue || '';
-                const lower = text.toLocaleLowerCase();
+                const lower = text.toLowerCase();
                 const index = lower.indexOf(queryLower);
                 if (index < 0) return;
                 const fragment = document.createDocumentFragment();
@@ -534,10 +536,10 @@ public sealed class MarkdownRenderer
                 searchState.current = -1;
                 searchState.hits = [];
                 if (!term) return;
-                const queryLower = term.toLocaleLowerCase();
+                const queryLower = term.toLowerCase();
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {
                   const code = wrap.querySelector('pre code');
-                  if (wrap.classList.contains('is-collapsed') && (code?.textContent || '').toLocaleLowerCase().includes(queryLower)) {
+                  if (wrap.classList.contains('is-collapsed') && (code?.textContent || '').toLowerCase().includes(queryLower)) {
                     wrap.classList.add('is-search-hit');
                   }
                 });
@@ -546,7 +548,7 @@ public sealed class MarkdownRenderer
                     const parent = node.parentElement;
                     if (!parent || !node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
                     if (parent.closest('.code-toolbar, script, style')) return NodeFilter.FILTER_REJECT;
-                    return node.nodeValue.toLocaleLowerCase().includes(queryLower)
+                    return node.nodeValue.toLowerCase().includes(queryLower)
                       ? NodeFilter.FILTER_ACCEPT
                       : NodeFilter.FILTER_REJECT;
                   }

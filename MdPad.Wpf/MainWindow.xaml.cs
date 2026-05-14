@@ -199,6 +199,27 @@ public partial class MainWindow : Window
 
     private void TabScrollRightButton_OnClick(object sender, RoutedEventArgs e) => ScrollTabsBy(180);
 
+    private void TabRoot_OnMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ClickCount < 2)
+        {
+            return;
+        }
+
+        if (e.OriginalSource is DependencyObject source && FindVisualParent<System.Windows.Controls.Button>(source) is not null)
+        {
+            return;
+        }
+
+        if ((sender as FrameworkElement)?.DataContext is not DocumentTab tab)
+        {
+            return;
+        }
+
+        RenameTab(tab);
+        e.Handled = true;
+    }
+
     private void ScrollTabsBy(double delta)
     {
         if (_tabsScrollViewer is null)
@@ -431,6 +452,97 @@ public partial class MainWindow : Window
                 break;
             }
         }
+    }
+
+    private void RenameTab(DocumentTab tab)
+    {
+        var currentName = string.IsNullOrWhiteSpace(tab.FilePath) ? tab.Title : Path.GetFileName(tab.FilePath);
+        var input = new System.Windows.Controls.TextBox
+        {
+            Text = currentName,
+            MinWidth = 320,
+            Height = 30,
+            Margin = new Thickness(0, 8, 0, 12),
+        };
+
+        var okButton = new System.Windows.Controls.Button { Content = "변경", Width = 78, Height = 30, IsDefault = true, Margin = new Thickness(0, 0, 6, 0) };
+        var cancelButton = new System.Windows.Controls.Button { Content = "취소", Width = 78, Height = 30, IsCancel = true };
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var panel = new StackPanel { Margin = new Thickness(16) };
+        panel.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(tab.FilePath) ? "탭 제목" : "파일명", FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(input);
+        panel.Children.Add(buttons);
+
+        var dialog = new Window
+        {
+            Title = "탭 이름 변경",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Content = panel,
+        };
+
+        okButton.Click += (_, _) =>
+        {
+            var nextName = input.Text.Trim();
+            if (string.IsNullOrWhiteSpace(nextName) || nextName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                System.Windows.MessageBox.Show(dialog, "사용할 수 없는 이름입니다.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                if (string.IsNullOrWhiteSpace(tab.FilePath))
+                {
+                    tab.Title = nextName;
+                }
+                else
+                {
+                    var directory = Path.GetDirectoryName(tab.FilePath) ?? Environment.CurrentDirectory;
+                    if (string.IsNullOrWhiteSpace(Path.GetExtension(nextName)))
+                    {
+                        nextName += Path.GetExtension(tab.FilePath);
+                    }
+
+                    var nextPath = Path.Combine(directory, nextName);
+                    if (!string.Equals(tab.FilePath, nextPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (File.Exists(nextPath))
+                        {
+                            System.Windows.MessageBox.Show(dialog, "같은 이름의 파일이 이미 있습니다.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
+                            return;
+                        }
+
+                        File.Move(tab.FilePath, nextPath);
+                        tab.FilePath = nextPath;
+                    }
+
+                    tab.Title = Path.GetFileName(nextPath);
+                }
+
+                TabsListBox.Items.Refresh();
+                UpdateTitle();
+                QueueSessionSave();
+                dialog.DialogResult = true;
+            }
+            catch (Exception exception)
+            {
+                System.Windows.MessageBox.Show(dialog, $"이름 변경 실패: {exception.Message}", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        };
+
+        dialog.Loaded += (_, _) =>
+        {
+            input.Focus();
+            input.SelectAll();
+        };
+
+        _ = dialog.ShowDialog();
     }
 
     private bool ConfirmSaveIfNeeded(DocumentTab tab)
@@ -1486,7 +1598,7 @@ public partial class MainWindow : Window
 
     private int FindEditorMatchIndex(string text, string query, bool forward)
     {
-        var comparison = StringComparison.CurrentCultureIgnoreCase;
+        var comparison = StringComparison.OrdinalIgnoreCase;
         var selectedMatch =
             EditorTextBox.SelectionLength == query.Length &&
             string.Equals(EditorTextBox.SelectedText, query, comparison);
@@ -1551,7 +1663,7 @@ public partial class MainWindow : Window
 
         Find(forward: true, keepSearchFocus: true);
         if (EditorTextBox.SelectionLength == findText.Length &&
-            string.Equals(EditorTextBox.SelectedText, findText, StringComparison.CurrentCultureIgnoreCase))
+            string.Equals(EditorTextBox.SelectedText, findText, StringComparison.OrdinalIgnoreCase))
         {
             EditorTextBox.SelectedText = ReplaceTextBox.Text;
             CurrentTab.Markdown = EditorTextBox.Text;
@@ -1647,7 +1759,7 @@ public partial class MainWindow : Window
 
         var count = 0;
         var index = 0;
-        while ((index = EditorTextBox.Text.IndexOf(query, index, StringComparison.CurrentCultureIgnoreCase)) >= 0)
+        while ((index = EditorTextBox.Text.IndexOf(query, index, StringComparison.OrdinalIgnoreCase)) >= 0)
         {
             count += 1;
             index += Math.Max(1, query.Length);
@@ -2389,6 +2501,21 @@ public partial class MainWindow : Window
                 yield return descendant;
             }
         }
+    }
+
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
+    {
+        while (child is not null)
+        {
+            if (child is T typed)
+            {
+                return typed;
+            }
+
+            child = System.Windows.Media.VisualTreeHelper.GetParent(child);
+        }
+
+        return null;
     }
 
     private static WpfSolidColorBrush Brush(string hex) => new((WpfColor)System.Windows.Media.ColorConverter.ConvertFromString(hex));
