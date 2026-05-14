@@ -335,6 +335,43 @@ public partial class MainWindow : Window
         }
     }
 
+    private void TabContextCloseMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (GetTabFromContextMenu(sender) is { } tab)
+        {
+            CloseTab(tab);
+        }
+    }
+
+    private void TabContextCloseRightMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (GetTabFromContextMenu(sender) is not { } tab)
+        {
+            return;
+        }
+
+        var startIndex = Tabs.IndexOf(tab);
+        if (startIndex < 0 || startIndex >= Tabs.Count - 1)
+        {
+            return;
+        }
+
+        var tabsToClose = Tabs.Skip(startIndex + 1).ToList();
+        CloseTabs(tabsToClose);
+    }
+
+    private void TabContextCloseAllMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        CloseTabs(Tabs.ToList());
+    }
+
+    private static DocumentTab? GetTabFromContextMenu(object sender)
+    {
+        return sender is FrameworkElement { Parent: ContextMenu { PlacementTarget: FrameworkElement target } }
+            ? target.DataContext as DocumentTab
+            : null;
+    }
+
     private bool CloseTab(DocumentTab tab)
     {
         if (!ConfirmSaveIfNeeded(tab))
@@ -357,6 +394,22 @@ public partial class MainWindow : Window
 
         QueueSessionSave();
         return true;
+    }
+
+    private void CloseTabs(IReadOnlyList<DocumentTab> tabsToClose)
+    {
+        foreach (var tab in tabsToClose)
+        {
+            if (!Tabs.Contains(tab))
+            {
+                continue;
+            }
+
+            if (!CloseTab(tab))
+            {
+                break;
+            }
+        }
     }
 
     private bool ConfirmSaveIfNeeded(DocumentTab tab)
@@ -1625,7 +1678,13 @@ public partial class MainWindow : Window
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion;
 
-        return string.IsNullOrWhiteSpace(informationalVersion) ? "2026.05.14.001" : informationalVersion;
+        if (string.IsNullOrWhiteSpace(informationalVersion))
+        {
+            return "2026.05.14.001";
+        }
+
+        var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
+        return metadataIndex >= 0 ? informationalVersion[..metadataIndex] : informationalVersion;
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
