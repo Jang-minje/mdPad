@@ -576,27 +576,20 @@ public partial class MainWindow : Window
             switch (e.Key)
             {
                 case Key.X:
-                    if (EditorTextBox.SelectionLength > 0)
-                    {
-                        EditorTextBox.Cut();
-                    }
-
+                    CutEditorSelection();
                     e.Handled = true;
                     return;
                 case Key.C:
-                    if (EditorTextBox.SelectionLength > 0)
-                    {
-                        EditorTextBox.Copy();
-                    }
-
+                    CopyEditorSelection();
                     e.Handled = true;
                     return;
                 case Key.V:
-                    EditorTextBox.Paste();
+                    PasteIntoEditor();
                     e.Handled = true;
                     return;
                 case Key.A:
                     EditorTextBox.SelectAll();
+                    StatusTextBlock.Text = "전체 선택";
                     e.Handled = true;
                     return;
             }
@@ -608,6 +601,73 @@ public partial class MainWindow : Window
             EditorTextBox.SelectedText = "    ";
             EditorTextBox.SelectionStart = selectionStart + 4;
             e.Handled = true;
+        }
+    }
+
+    private void CutEditorSelection()
+    {
+        if (EditorTextBox.SelectionLength <= 0)
+        {
+            StatusTextBlock.Text = "잘라내기: 선택된 텍스트가 없습니다.";
+            return;
+        }
+
+        var selectedText = EditorTextBox.SelectedText;
+        if (!TrySetClipboardText(selectedText))
+        {
+            StatusTextBlock.Text = "잘라내기 실패: 클립보드 접근이 차단되었습니다.";
+            return;
+        }
+
+        EditorTextBox.SelectedText = string.Empty;
+        StatusTextBlock.Text = $"잘라내기 완료: {selectedText.Length:N0}자";
+    }
+
+    private void CopyEditorSelection()
+    {
+        if (EditorTextBox.SelectionLength <= 0)
+        {
+            StatusTextBlock.Text = "복사: 선택된 텍스트가 없습니다.";
+            return;
+        }
+
+        StatusTextBlock.Text = TrySetClipboardText(EditorTextBox.SelectedText)
+            ? $"복사 완료: {EditorTextBox.SelectionLength:N0}자"
+            : "복사 실패: 클립보드 접근이 차단되었습니다.";
+    }
+
+    private void PasteIntoEditor()
+    {
+        try
+        {
+            if (!System.Windows.Clipboard.ContainsText())
+            {
+                StatusTextBlock.Text = "붙여넣기: 클립보드에 텍스트가 없습니다.";
+                return;
+            }
+
+            var text = System.Windows.Clipboard.GetText();
+            var selectionStart = EditorTextBox.SelectionStart;
+            EditorTextBox.SelectedText = text;
+            EditorTextBox.SelectionStart = selectionStart + text.Length;
+            StatusTextBlock.Text = $"붙여넣기 완료: {text.Length:N0}자";
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"붙여넣기 실패: {exception.Message}";
+        }
+    }
+
+    private static bool TrySetClipboardText(string text)
+    {
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 
