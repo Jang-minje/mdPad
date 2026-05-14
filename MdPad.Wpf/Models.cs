@@ -106,12 +106,3 @@ public sealed class DocumentTab : INotifyPropertyChanged
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }
-
-public sealed class NearbyPeer
-{
-    public string Id { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Address { get; set; } = string.Empty;
-    public int Port { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-}

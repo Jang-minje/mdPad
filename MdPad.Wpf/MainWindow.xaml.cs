@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
@@ -25,7 +26,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _previewDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _sessionSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly SessionStateStore _sessionStateStore = new();
-    private readonly LanShareService _lanShareService = new();
     private readonly Dictionary<Guid, PreviewCacheEntry> _previewCache = [];
     private readonly double[] _fontSizes = Enumerable.Range(8, 29).Select(size => (double)size).ToArray();
     private bool _isUpdatingEditor;
@@ -39,6 +39,7 @@ public partial class MainWindow : Window
     private DocumentMode _mode = DocumentMode.Edit;
     private ThemeMode _theme = ThemeMode.Default;
     private EditorStyleSettings _defaultStyle = new();
+    private StyleShortcutSettings _styleShortcuts = new();
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
@@ -81,26 +82,9 @@ public partial class MainWindow : Window
         PreviewWebView.CoreWebView2.WebMessageReceived += PreviewWebView_OnWebMessageReceived;
         _isPreviewReady = true;
 
-        _lanShareService.PeersChanged += () => Dispatcher.Invoke(RefreshPeers);
-        _lanShareService.DocumentReceived += (title, markdown) => Dispatcher.Invoke(() =>
-        {
-            AddNewTab(string.IsNullOrWhiteSpace(title) ? "받은 문서" : title, markdown ?? string.Empty);
-            StatusTextBlock.Text = "네트워크에서 문서를 받았습니다.";
-            _notifyIcon?.ShowBalloonTip(2500, "MD Pad", "네트워크에서 문서를 받았습니다.", System.Windows.Forms.ToolTipIcon.Info);
-        });
-
-        try
-        {
-            await _lanShareService.StartAsync();
-            LanStatusTextBlock.Text = $"LAN discovery : {Environment.MachineName}";
-        }
-        catch (Exception exception)
-        {
-            LanStatusTextBlock.Text = $"LAN 비활성: {exception.Message}";
-        }
-
         InitializeStyleControls();
         RestoreSession();
+        UpdateStyleShortcutMenuText();
         ApplyTheme();
         ApplyStartupRegistration(_launchOnLogin);
         ApplyProtocolRegistration();
@@ -535,6 +519,11 @@ public partial class MainWindow : Window
 
     private void MainWindow_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (TryHandleStyleShortcut(e))
+        {
+            return;
+        }
+
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
         {
             ShowSearch();
@@ -724,7 +713,7 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
-    private void InsertTableMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n| 항목 | 설명 |\n| --- | --- |\n| 값 | 내용 |\n");
+    private void InsertTableMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertTableSnippet();
 
     private void InsertChecklistMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n- [ ] 할 일\n- [ ] 확인할 일\n");
 
@@ -735,6 +724,93 @@ public partial class MainWindow : Window
     private void InsertLinkMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("[링크](https://example.com)");
 
     private void InsertDividerMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n---\n");
+
+    private void InsertTableSnippet() => InsertSnippet("\n| 왼쪽 정렬 | 가운데 정렬 | 오른쪽 정렬 |\n| :--- | :---: | ---: |\n| 값 | 내용 | 100 |\n");
+
+    private bool TryHandleStyleShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.None)
+        {
+            return false;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.Table, e))
+        {
+            InsertTableSnippet();
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.Checklist, e))
+        {
+            InsertChecklistMenuItem_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.CodeBlock, e))
+        {
+            InsertCodeBlockMenuItem_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.Image, e))
+        {
+            InsertImageMenuItem_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.Link, e))
+        {
+            InsertLinkMenuItem_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_styleShortcuts.Divider, e))
+        {
+            InsertDividerMenuItem_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsShortcutMatch(string gestureText, System.Windows.Input.KeyEventArgs e)
+    {
+        if (!TryParseShortcut(gestureText, out var key, out var modifiers))
+        {
+            return false;
+        }
+
+        var actualKey = e.Key == Key.System ? e.SystemKey : e.Key;
+        return actualKey == key && Keyboard.Modifiers == modifiers;
+    }
+
+    private static bool TryParseShortcut(string gestureText, out Key key, out ModifierKeys modifiers)
+    {
+        key = Key.None;
+        modifiers = ModifierKeys.None;
+
+        try
+        {
+            if (new KeyGestureConverter().ConvertFromString(gestureText) is not KeyGesture gesture)
+            {
+                return false;
+            }
+
+            key = gesture.Key;
+            modifiers = gesture.Modifiers;
+            return key != Key.None && modifiers != ModifierKeys.None;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private void InsertSnippet(string snippet)
     {
@@ -769,6 +845,94 @@ public partial class MainWindow : Window
     private void IncreaseFontMenuItem_OnClick(object sender, RoutedEventArgs e) => AdjustCurrentTabFontSize(1);
 
     private void DecreaseFontMenuItem_OnClick(object sender, RoutedEventArgs e) => AdjustCurrentTabFontSize(-1);
+
+    private void TableShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("표 삽입", _styleShortcuts.Table, value => _styleShortcuts.Table = value);
+
+    private void ChecklistShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("체크리스트 삽입", _styleShortcuts.Checklist, value => _styleShortcuts.Checklist = value);
+
+    private void CodeBlockShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("코드블럭 삽입", _styleShortcuts.CodeBlock, value => _styleShortcuts.CodeBlock = value);
+
+    private void ImageShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("이미지 삽입", _styleShortcuts.Image, value => _styleShortcuts.Image = value);
+
+    private void LinkShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("링크 삽입", _styleShortcuts.Link, value => _styleShortcuts.Link = value);
+
+    private void DividerShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureStyleShortcut("구분선 삽입", _styleShortcuts.Divider, value => _styleShortcuts.Divider = value);
+
+    private void VersionInfoMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        var version = GetAppVersion();
+        System.Windows.MessageBox.Show(
+            this,
+            $"MD Pad WV2\n버전: {version}",
+            "버전 정보",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private void ConfigureStyleShortcut(string label, string currentValue, Action<string> apply)
+    {
+        var input = new System.Windows.Controls.TextBox
+        {
+            Text = currentValue,
+            Margin = new Thickness(0, 8, 0, 12),
+            MinWidth = 260,
+            Height = 28,
+        };
+
+        var description = new TextBlock
+        {
+            Text = "예: Ctrl+Alt+T, Ctrl+Shift+T",
+            Foreground = WpfSolidColorBrushCache("#606060"),
+            Margin = new Thickness(0, 0, 0, 8),
+        };
+
+        var okButton = new System.Windows.Controls.Button { Content = "저장", Width = 72, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 6, 0) };
+        var cancelButton = new System.Windows.Controls.Button { Content = "취소", Width = 72, Height = 28, IsCancel = true };
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var panel = new StackPanel { Margin = new Thickness(16) };
+        panel.Children.Add(new TextBlock { Text = $"{label} 단축키", FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(input);
+        panel.Children.Add(description);
+        panel.Children.Add(buttons);
+
+        var dialog = new Window
+        {
+            Title = "스타일 단축키",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Content = panel,
+        };
+
+        okButton.Click += (_, _) =>
+        {
+            var value = input.Text.Trim();
+            if (!TryParseShortcut(value, out _, out _))
+            {
+                System.Windows.MessageBox.Show(dialog, "단축키 형식이 올바르지 않습니다.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            apply(value);
+            UpdateStyleShortcutMenuText();
+            QueueSessionSave();
+            dialog.DialogResult = true;
+        };
+
+        _ = dialog.ShowDialog();
+    }
+
+    private static WpfSolidColorBrush WpfSolidColorBrushCache(string hex) => Brush(hex);
 
     private void HideSearch()
     {
@@ -893,42 +1057,6 @@ public partial class MainWindow : Window
         }
 
         SearchStatusTextBlock.Text = $"{count}개";
-    }
-
-    private void RefreshPeersButton_OnClick(object sender, RoutedEventArgs e) => RefreshPeers();
-
-    private void RefreshPeers()
-    {
-        PeerComboBox.ItemsSource = null;
-        PeerComboBox.ItemsSource = _lanShareService.Peers;
-        if (PeerComboBox.Items.Count > 0 && PeerComboBox.SelectedIndex < 0)
-        {
-            PeerComboBox.SelectedIndex = 0;
-        }
-    }
-
-    private async void SendButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (CurrentTab is null)
-        {
-            return;
-        }
-
-        if (PeerComboBox.SelectedItem is not NearbyPeer peer)
-        {
-            StatusTextBlock.Text = "전송할 컴퓨터를 선택하세요.";
-            return;
-        }
-
-        try
-        {
-            await _lanShareService.SendAsync(peer, CurrentTab.Title, CurrentTab.Markdown);
-            StatusTextBlock.Text = $"전송됨: {peer.DisplayName}";
-        }
-        catch (Exception exception)
-        {
-            StatusTextBlock.Text = $"전송 실패: {exception.Message}";
-        }
     }
 
     private void Window_OnDragOver(object sender, System.Windows.DragEventArgs e)
@@ -1171,7 +1299,6 @@ public partial class MainWindow : Window
             app.ExternalArgumentsReceived -= App_OnExternalArgumentsReceived;
         }
         _notifyIcon?.Dispose();
-        _lanShareService.Dispose();
     }
 
     private void UpdateTitle()
@@ -1186,6 +1313,7 @@ public partial class MainWindow : Window
         _theme = session.Theme;
         _launchOnLogin = session.LaunchOnLogin;
         _defaultStyle = session.DefaultStyle ?? new EditorStyleSettings();
+        _styleShortcuts = NormalizeShortcuts(session.StyleShortcuts);
         _defaultStyle.FontSize = Math.Clamp(_defaultStyle.FontSize, 8, 36);
         if (string.IsNullOrWhiteSpace(_defaultStyle.FontFamily))
         {
@@ -1215,12 +1343,51 @@ public partial class MainWindow : Window
 
         TabsListBox.SelectedItem = Tabs.FirstOrDefault(tab => tab.Id.ToString("N") == session.SelectedTabId) ?? Tabs[0];
         UpdateStyleControlsFromCurrentTab();
+        UpdateStyleShortcutMenuText();
     }
 
     private void QueueSessionSave()
     {
         _sessionSaveTimer.Stop();
         _sessionSaveTimer.Start();
+    }
+
+    private static StyleShortcutSettings NormalizeShortcuts(StyleShortcutSettings? shortcuts)
+    {
+        var defaults = new StyleShortcutSettings();
+        if (shortcuts is null)
+        {
+            return defaults;
+        }
+
+        return new StyleShortcutSettings
+        {
+            Table = IsValidShortcut(shortcuts.Table) ? shortcuts.Table : defaults.Table,
+            Checklist = IsValidShortcut(shortcuts.Checklist) ? shortcuts.Checklist : defaults.Checklist,
+            CodeBlock = IsValidShortcut(shortcuts.CodeBlock) ? shortcuts.CodeBlock : defaults.CodeBlock,
+            Image = IsValidShortcut(shortcuts.Image) ? shortcuts.Image : defaults.Image,
+            Link = IsValidShortcut(shortcuts.Link) ? shortcuts.Link : defaults.Link,
+            Divider = IsValidShortcut(shortcuts.Divider) ? shortcuts.Divider : defaults.Divider,
+        };
+    }
+
+    private static bool IsValidShortcut(string value) => TryParseShortcut(value, out _, out _);
+
+    private void UpdateStyleShortcutMenuText()
+    {
+        TableInsertMenuItem.InputGestureText = _styleShortcuts.Table;
+        ChecklistInsertMenuItem.InputGestureText = _styleShortcuts.Checklist;
+        CodeBlockInsertMenuItem.InputGestureText = _styleShortcuts.CodeBlock;
+        ImageInsertMenuItem.InputGestureText = _styleShortcuts.Image;
+        LinkInsertMenuItem.InputGestureText = _styleShortcuts.Link;
+        DividerInsertMenuItem.InputGestureText = _styleShortcuts.Divider;
+
+        TableShortcutMenuItem.Header = $"표 삽입... ({_styleShortcuts.Table})";
+        ChecklistShortcutMenuItem.Header = $"체크리스트 삽입... ({_styleShortcuts.Checklist})";
+        CodeBlockShortcutMenuItem.Header = $"코드블럭 삽입... ({_styleShortcuts.CodeBlock})";
+        ImageShortcutMenuItem.Header = $"이미지 삽입... ({_styleShortcuts.Image})";
+        LinkShortcutMenuItem.Header = $"링크 삽입... ({_styleShortcuts.Link})";
+        DividerShortcutMenuItem.Header = $"구분선 삽입... ({_styleShortcuts.Divider})";
     }
 
     private void SaveSession()
@@ -1232,6 +1399,7 @@ public partial class MainWindow : Window
             Theme = _theme,
             LaunchOnLogin = _launchOnLogin,
             DefaultStyle = _defaultStyle,
+            StyleShortcuts = _styleShortcuts,
             Documents = Tabs.Select(tab => new SessionDocument
             {
                 Id = tab.Id.ToString("N"),
@@ -1436,7 +1604,6 @@ public partial class MainWindow : Window
             ? System.Drawing.Color.FromArgb(255, 13, 17, 23)
             : System.Drawing.Color.FromArgb(255, 250, 250, 250);
         StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
-        LanStatusTextBlock.Foreground = Brush(dark ? "#BFBFBF" : "#111827");
 
         foreach (var comboBox in FindVisualChildren<System.Windows.Controls.ComboBox>(ToolbarHost))
         {
@@ -1449,6 +1616,16 @@ public partial class MainWindow : Window
     private void SetBrush(string key, string hex)
     {
         Resources[key] = Brush(hex);
+    }
+
+    private static string GetAppVersion()
+    {
+        var informationalVersion = Assembly
+            .GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+
+        return string.IsNullOrWhiteSpace(informationalVersion) ? "2026.05.14.001" : informationalVersion;
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
@@ -1544,7 +1721,7 @@ public partial class MainWindow : Window
         Hide();
         if (showTip)
         {
-            _notifyIcon?.ShowBalloonTip(1800, "MD Pad", "트레이에서 계속 실행 중입니다. 네트워크 문서 수신이 유지됩니다.", System.Windows.Forms.ToolTipIcon.Info);
+            _notifyIcon?.ShowBalloonTip(1800, "MD Pad", "트레이에서 계속 실행 중입니다.", System.Windows.Forms.ToolTipIcon.Info);
         }
     }
 
@@ -1553,7 +1730,6 @@ public partial class MainWindow : Window
         _isExitRequested = true;
         SaveSession();
         _notifyIcon?.Dispose();
-        _lanShareService.Dispose();
         System.Windows.Application.Current.Shutdown();
     }
 

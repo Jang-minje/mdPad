@@ -175,16 +175,6 @@
             </Setter>
         </Style>
 
-        <Style x:Key="PeerComboStyle" TargetType="ComboBox">
-            <Setter Property="Height" Value="26" />
-            <Setter Property="Width" Value="190" />
-            <Setter Property="Margin" Value="8,0,4,0" />
-            <Setter Property="Padding" Value="10,0" />
-            <Setter Property="Background" Value="#F5F5F5" />
-            <Setter Property="Foreground" Value="#111827" />
-            <Setter Property="BorderBrush" Value="#777777" />
-        </Style>
-
         <Style x:Key="TabListBoxItemStyle" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
@@ -276,22 +266,30 @@
             <MenuItem Header="스타일(_S)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem Header="현재 스타일을 기본값으로 저장" Click="SaveDefaultStyleButton_OnClick" />
                 <Separator />
-                <MenuItem Header="표 삽입" Click="InsertTableMenuItem_OnClick" />
-                <MenuItem Header="체크리스트 삽입" Click="InsertChecklistMenuItem_OnClick" />
-                <MenuItem Header="코드블럭 삽입" Click="InsertCodeBlockMenuItem_OnClick" />
-                <MenuItem Header="이미지 삽입" Click="InsertImageMenuItem_OnClick" />
-                <MenuItem Header="링크 삽입" Click="InsertLinkMenuItem_OnClick" />
-                <MenuItem Header="구분선 삽입" Click="InsertDividerMenuItem_OnClick" />
+                <MenuItem x:Name="TableInsertMenuItem" Header="표 삽입" Click="InsertTableMenuItem_OnClick" />
+                <MenuItem x:Name="ChecklistInsertMenuItem" Header="체크리스트 삽입" Click="InsertChecklistMenuItem_OnClick" />
+                <MenuItem x:Name="CodeBlockInsertMenuItem" Header="코드블럭 삽입" Click="InsertCodeBlockMenuItem_OnClick" />
+                <MenuItem x:Name="ImageInsertMenuItem" Header="이미지 삽입" Click="InsertImageMenuItem_OnClick" />
+                <MenuItem x:Name="LinkInsertMenuItem" Header="링크 삽입" Click="InsertLinkMenuItem_OnClick" />
+                <MenuItem x:Name="DividerInsertMenuItem" Header="구분선 삽입" Click="InsertDividerMenuItem_OnClick" />
             </MenuItem>
-            <MenuItem Header="네트워크(_N)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
-                <MenuItem Header="목록 새로고침" Click="RefreshPeersButton_OnClick" />
-                <MenuItem Header="현재 탭 전송" Click="SendButton_OnClick" />
-                <Separator />
+            <MenuItem Header="옵션(_O)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem x:Name="StartupMenuItem"
                           Header="윈도우 시작 시 자동 실행"
                           IsCheckable="True"
                           Checked="StartupMenuItem_OnChecked"
                           Unchecked="StartupMenuItem_OnUnchecked" />
+                <Separator />
+                <MenuItem Header="스타일 단축키">
+                    <MenuItem x:Name="TableShortcutMenuItem" Header="표 삽입..." Click="TableShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="ChecklistShortcutMenuItem" Header="체크리스트 삽입..." Click="ChecklistShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="CodeBlockShortcutMenuItem" Header="코드블럭 삽입..." Click="CodeBlockShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="ImageShortcutMenuItem" Header="이미지 삽입..." Click="ImageShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="LinkShortcutMenuItem" Header="링크 삽입..." Click="LinkShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="DividerShortcutMenuItem" Header="구분선 삽입..." Click="DividerShortcutMenuItem_OnClick" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="버전 정보" Click="VersionInfoMenuItem_OnClick" />
             </MenuItem>
         </Menu>
 
@@ -325,9 +323,6 @@
                         <RadioButton x:Name="EditModeButton" Style="{StaticResource ModeButtonStyle}" Checked="EditModeButton_OnChecked" Content="편집" />
                         <RadioButton x:Name="PreviewModeButton" Style="{StaticResource ModeButtonStyle}" Checked="PreviewModeButton_OnChecked" Content="미리보기" />
                     </StackPanel>
-                    <ComboBox x:Name="PeerComboBox" Style="{StaticResource PeerComboStyle}" DisplayMemberPath="DisplayName" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="RefreshPeersButton_OnClick" Content="새로고침" MinWidth="64" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="SendButton_OnClick" Content="전송" />
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -444,7 +439,6 @@
 
         <Border x:Name="StatusHost" Grid.Row="5" Background="{StaticResource ChromeBrush}" Padding="4,0">
             <DockPanel>
-                <TextBlock x:Name="LanStatusTextBlock" DockPanel.Dock="Right" Foreground="#BFBFBF" VerticalAlignment="Center" />
                 <TextBlock x:Name="StatusTextBlock" Foreground="#DCDCDC" VerticalAlignment="Center" Text="Ready" />
             </DockPanel>
         </Border>

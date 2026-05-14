@@ -47,6 +47,7 @@ public sealed class SessionState
     public ThemeMode Theme { get; set; } = ThemeMode.Default;
     public bool LaunchOnLogin { get; set; } = true;
     public EditorStyleSettings DefaultStyle { get; set; } = new();
+    public StyleShortcutSettings StyleShortcuts { get; set; } = new();
     public List<SessionDocument> Documents { get; set; } = [];
 }
 
@@ -65,4 +66,14 @@ public sealed class EditorStyleSettings
 {
     public string FontFamily { get; set; } = "Malgun Gothic";
     public double FontSize { get; set; } = 16;
+}
+
+public sealed class StyleShortcutSettings
+{
+    public string Table { get; set; } = "Ctrl+Alt+T";
+    public string Checklist { get; set; } = "Ctrl+Alt+K";
+    public string CodeBlock { get; set; } = "Ctrl+Alt+C";
+    public string Image { get; set; } = "Ctrl+Alt+I";
+    public string Link { get; set; } = "Ctrl+Alt+L";
+    public string Divider { get; set; } = "Ctrl+Alt+D";
 }
