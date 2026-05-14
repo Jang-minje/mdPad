@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -613,9 +614,9 @@ public partial class MainWindow : Window
         }
 
         var selectedText = EditorTextBox.SelectedText;
-        if (!TrySetClipboardText(selectedText))
+        if (!TrySetClipboardText(selectedText, out var error))
         {
-            StatusTextBlock.Text = "잘라내기 실패: 클립보드 접근이 차단되었습니다.";
+            StatusTextBlock.Text = $"잘라내기 실패: {error}";
             return;
         }
 
@@ -631,9 +632,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        StatusTextBlock.Text = TrySetClipboardText(EditorTextBox.SelectedText)
+        StatusTextBlock.Text = TrySetClipboardText(EditorTextBox.SelectedText, out var error)
             ? $"복사 완료: {EditorTextBox.SelectionLength:N0}자"
-            : "복사 실패: 클립보드 접근이 차단되었습니다.";
+            : $"복사 실패: {error}";
     }
 
     private void PasteIntoEditor()
@@ -658,18 +659,70 @@ public partial class MainWindow : Window
         }
     }
 
-    private static bool TrySetClipboardText(string text)
+    private static bool TrySetClipboardText(string text, out string error)
+    {
+        Exception? lastException = null;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                System.Windows.Clipboard.SetDataObject(text, copy: true);
+                error = string.Empty;
+                return true;
+            }
+            catch (Exception exception)
+            {
+                lastException = exception;
+                Thread.Sleep(45);
+            }
+        }
+
+        error = BuildClipboardError(lastException);
+        return false;
+    }
+
+    private static string BuildClipboardError(Exception? exception)
+    {
+        var owner = GetOpenClipboardProcessName();
+        var ownerText = string.IsNullOrWhiteSpace(owner) ? "점유 프로세스 확인 안 됨" : $"점유 프로세스: {owner}";
+        if (exception is null)
+        {
+            return $"클립보드 접근 실패, {ownerText}";
+        }
+
+        return $"{exception.GetType().Name} 0x{exception.HResult:X8}: {exception.Message}, {ownerText}";
+    }
+
+    private static string? GetOpenClipboardProcessName()
     {
         try
         {
-            System.Windows.Clipboard.SetText(text);
-            return true;
+            var windowHandle = GetOpenClipboardWindow();
+            if (windowHandle == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            _ = GetWindowThreadProcessId(windowHandle, out var processId);
+            if (processId == 0)
+            {
+                return $"HWND 0x{windowHandle.ToInt64():X}";
+            }
+
+            using var process = Process.GetProcessById((int)processId);
+            return $"{process.ProcessName}({processId})";
         }
         catch
         {
-            return false;
+            return null;
         }
     }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetOpenClipboardWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     private void InsertTableMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n| 항목 | 설명 |\n| --- | --- |\n| 값 | 내용 |\n");
 
