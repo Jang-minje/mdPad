@@ -289,6 +289,8 @@
                     <MenuItem x:Name="DividerShortcutMenuItem" Header="구분선 삽입..." Click="DividerShortcutMenuItem_OnClick" />
                 </MenuItem>
                 <Separator />
+                <MenuItem Header="오픈소스 라이선스" Click="OpenSourceLicensesMenuItem_OnClick" />
+                <Separator />
                 <MenuItem Header="버전 정보" Click="VersionInfoMenuItem_OnClick" />
             </MenuItem>
         </Menu>

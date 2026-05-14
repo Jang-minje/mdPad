@@ -928,6 +928,40 @@ public partial class MainWindow : Window
             MessageBoxImage.Information);
     }
 
+    private void OpenSourceLicensesMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "THIRD-PARTY-NOTICES.txt");
+        var notices = File.Exists(path)
+            ? File.ReadAllText(path)
+            : "THIRD-PARTY-NOTICES.txt 파일을 찾을 수 없습니다.";
+
+        var textBox = new System.Windows.Controls.TextBox
+        {
+            Text = notices,
+            IsReadOnly = true,
+            TextWrapping = TextWrapping.NoWrap,
+            AcceptsReturn = true,
+            AcceptsTab = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            FontSize = 12,
+            Padding = new Thickness(10),
+        };
+
+        var dialog = new Window
+        {
+            Title = "오픈소스 라이선스",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Width = 760,
+            Height = 560,
+            Content = textBox,
+        };
+
+        dialog.ShowDialog();
+    }
+
     private void ConfigureStyleShortcut(string label, string currentValue, Action<string> apply)
     {
         var input = new System.Windows.Controls.TextBox
@@ -1680,7 +1714,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.14.002";
+            return "2026.05.14.003";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
