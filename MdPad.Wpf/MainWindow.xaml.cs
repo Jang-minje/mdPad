@@ -848,8 +848,7 @@ public partial class MainWindow : Window
 
     private void InsertCodeBlockMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
-        ApplyMode(DocumentMode.Edit);
-        EditorTextBox.Focus();
+        EnsureEditorAvailableForInsertion();
         const string prefix = "\n```txt\n";
         const string suffix = "\n```\n";
         var start = EditorTextBox.SelectionStart;
@@ -952,11 +951,20 @@ public partial class MainWindow : Window
 
     private void InsertSnippet(string snippet)
     {
-        ApplyMode(DocumentMode.Edit);
-        EditorTextBox.Focus();
+        EnsureEditorAvailableForInsertion();
         var start = EditorTextBox.SelectionStart;
         EditorTextBox.SelectedText = snippet;
         EditorTextBox.SelectionStart = start + snippet.Length;
+    }
+
+    private void EnsureEditorAvailableForInsertion()
+    {
+        if (_mode == DocumentMode.Preview)
+        {
+            ApplyMode(DocumentMode.Edit);
+        }
+
+        EditorTextBox.Focus();
     }
 
     private void ContentHost_OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
