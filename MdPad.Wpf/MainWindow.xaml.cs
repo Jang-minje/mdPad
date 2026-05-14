@@ -650,7 +650,7 @@ public partial class MainWindow : Window
             var text = System.Windows.Clipboard.GetText();
             var selectionStart = EditorTextBox.SelectionStart;
             EditorTextBox.SelectedText = text;
-            EditorTextBox.SelectionStart = selectionStart + text.Length;
+            EditorTextBox.Select(selectionStart + text.Length, 0);
             StatusTextBlock.Text = $"붙여넣기 완료: {text.Length:N0}자";
         }
         catch (Exception exception)
