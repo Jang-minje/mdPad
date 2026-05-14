@@ -571,6 +571,37 @@ public partial class MainWindow : Window
 
     private void EditorTextBox_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (Keyboard.Modifiers == ModifierKeys.Control)
+        {
+            switch (e.Key)
+            {
+                case Key.X:
+                    if (EditorTextBox.SelectionLength > 0)
+                    {
+                        EditorTextBox.Cut();
+                    }
+
+                    e.Handled = true;
+                    return;
+                case Key.C:
+                    if (EditorTextBox.SelectionLength > 0)
+                    {
+                        EditorTextBox.Copy();
+                    }
+
+                    e.Handled = true;
+                    return;
+                case Key.V:
+                    EditorTextBox.Paste();
+                    e.Handled = true;
+                    return;
+                case Key.A:
+                    EditorTextBox.SelectAll();
+                    e.Handled = true;
+                    return;
+            }
+        }
+
         if (e.Key == Key.Tab)
         {
             var selectionStart = EditorTextBox.SelectionStart;
