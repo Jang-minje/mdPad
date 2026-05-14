@@ -273,12 +273,7 @@
                 <MenuItem x:Name="DarkThemeMenuItem" Header="다크 테마" IsCheckable="True" Click="DarkThemeMenuItem_OnClick" />
             </MenuItem>
             <MenuItem Header="스타일(_S)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
-                <MenuItem Header="글꼴">
-                    <MenuItem Header="현재 탭 글꼴..." Click="FontFamilyMenuItem_OnClick" />
-                    <MenuItem Header="현재 탭 크기..." Click="FontSizeMenuItem_OnClick" />
-                    <Separator />
-                    <MenuItem Header="기본값으로 저장" Click="SaveDefaultStyleButton_OnClick" />
-                </MenuItem>
+                <MenuItem Header="글꼴..." Click="FontStyleMenuItem_OnClick" />
                 <Separator />
                 <MenuItem x:Name="TableInsertMenuItem" Header="표 삽입" Click="InsertTableMenuItem_OnClick" />
                 <MenuItem x:Name="ChecklistInsertMenuItem" Header="체크리스트 삽입" Click="InsertChecklistMenuItem_OnClick" />

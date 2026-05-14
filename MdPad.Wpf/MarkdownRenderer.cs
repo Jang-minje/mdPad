@@ -227,6 +227,15 @@ public sealed class MarkdownRenderer
               border-radius: 2px;
               padding: 0 1px;
             }
+            mark.mdpad-search-highlight.mdpad-search-current {
+              background: #f59e0b !important;
+              color: #111827 !important;
+              box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
+            }
+            .code-wrap.is-current-search-hit {
+              border-color: #f59e0b;
+              box-shadow: 0 0 0 3px rgba(245, 158, 11, .28);
+            }
             .code-wrap.is-search-hit {
               animation: mdpad-code-pulse 1.1s ease-in-out 0s 3;
               border-color: #f59e0b;
@@ -436,6 +445,14 @@ public sealed class MarkdownRenderer
                   parent.normalize();
                 });
                 article.querySelectorAll('.code-wrap.is-search-hit').forEach((wrap) => wrap.classList.remove('is-search-hit'));
+                article.querySelectorAll('.code-wrap.is-current-search-hit').forEach((wrap) => wrap.classList.remove('is-current-search-hit'));
+              };
+              const searchState = { query: '', current: -1, hits: [] };
+              const collectSearchHits = () => {
+                searchState.hits = [
+                  ...Array.from(article.querySelectorAll('mark.mdpad-search-highlight')),
+                  ...Array.from(article.querySelectorAll('.code-wrap.is-search-hit'))
+                ];
               };
               const highlightTextNode = (node, queryLower) => {
                 const text = node.nodeValue || '';
@@ -460,6 +477,9 @@ public sealed class MarkdownRenderer
               window.mdPadHighlightSearch = (query) => {
                 clearSearchHighlights();
                 const term = (query || '').toString();
+                searchState.query = term;
+                searchState.current = -1;
+                searchState.hits = [];
                 if (!term) return;
                 const queryLower = term.toLocaleLowerCase();
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {
@@ -481,6 +501,25 @@ public sealed class MarkdownRenderer
                 const nodes = [];
                 while (walker.nextNode()) nodes.push(walker.currentNode);
                 nodes.forEach((node) => highlightTextNode(node, queryLower));
+                collectSearchHits();
+              };
+              window.mdPadFindNext = (query, forward) => {
+                const term = (query || '').toString();
+                if (term !== searchState.query || searchState.hits.length === 0) {
+                  window.mdPadHighlightSearch(term);
+                }
+                if (!searchState.hits.length) return;
+                searchState.hits.forEach((hit) => hit.classList.remove('mdpad-search-current', 'is-current-search-hit'));
+                searchState.current = forward
+                  ? (searchState.current + 1) % searchState.hits.length
+                  : (searchState.current - 1 + searchState.hits.length) % searchState.hits.length;
+                const current = searchState.hits[searchState.current];
+                if (current.classList.contains('code-wrap')) {
+                  current.classList.add('is-current-search-hit');
+                } else {
+                  current.classList.add('mdpad-search-current');
+                }
+                current.scrollIntoView({ block: 'center', inline: 'nearest' });
               };
               window.mdPadSetAllCodeCollapsed = (collapsed) => {
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {

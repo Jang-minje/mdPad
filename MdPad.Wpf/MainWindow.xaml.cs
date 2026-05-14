@@ -985,6 +985,137 @@ public partial class MainWindow : Window
 
     private void DecreaseFontMenuItem_OnClick(object sender, RoutedEventArgs e) => AdjustCurrentTabFontSize(-1);
 
+    private void FontStyleMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var dark = _theme == ThemeMode.Dark;
+        var foreground = Brush(dark ? "#F0F0F0" : "#111827");
+        var background = Brush(dark ? "#252526" : "#FFFFFF");
+        var inputBackground = Brush(dark ? "#1E1E1E" : "#FFFFFF");
+        var border = Brush(dark ? "#555555" : "#B8B8B8");
+
+        var fontComboBox = new System.Windows.Controls.ComboBox
+        {
+            ItemsSource = FontFamilyComboBox.ItemsSource,
+            SelectedItem = CurrentTab.FontFamily,
+            Text = CurrentTab.FontFamily,
+            IsEditable = true,
+            MinWidth = 320,
+            Height = 30,
+            Background = inputBackground,
+            Foreground = foreground,
+            BorderBrush = border,
+        };
+
+        var sizeComboBox = new System.Windows.Controls.ComboBox
+        {
+            ItemsSource = _fontSizes,
+            SelectedItem = _fontSizes.FirstOrDefault(size => Math.Abs(size - CurrentTab.FontSize) < 0.001),
+            Text = CurrentTab.FontSize.ToString("0"),
+            IsEditable = true,
+            MinWidth = 120,
+            Height = 30,
+            Background = inputBackground,
+            Foreground = foreground,
+            BorderBrush = border,
+        };
+
+        var applyButton = new System.Windows.Controls.Button { Content = "적용", Width = 84, Height = 30, IsDefault = true, Margin = new Thickness(0, 0, 6, 0) };
+        var saveDefaultButton = new System.Windows.Controls.Button { Content = "기본값으로 저장", Width = 128, Height = 30, Margin = new Thickness(0, 0, 6, 0) };
+        var cancelButton = new System.Windows.Controls.Button { Content = "취소", Width = 84, Height = 30, IsCancel = true };
+
+        var panel = new Grid { Margin = new Thickness(18), Background = background };
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var fontLabel = new TextBlock { Text = "글꼴", Foreground = foreground, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 10) };
+        var sizeLabel = new TextBlock { Text = "크기", Foreground = foreground, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 12, 14) };
+        Grid.SetRow(fontLabel, 0);
+        Grid.SetColumn(fontLabel, 0);
+        Grid.SetRow(fontComboBox, 0);
+        Grid.SetColumn(fontComboBox, 1);
+        fontComboBox.Margin = new Thickness(0, 0, 0, 10);
+        Grid.SetRow(sizeLabel, 1);
+        Grid.SetColumn(sizeLabel, 0);
+        Grid.SetRow(sizeComboBox, 1);
+        Grid.SetColumn(sizeComboBox, 1);
+        sizeComboBox.Margin = new Thickness(0, 0, 0, 14);
+
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(applyButton);
+        buttons.Children.Add(saveDefaultButton);
+        buttons.Children.Add(cancelButton);
+        Grid.SetRow(buttons, 2);
+        Grid.SetColumnSpan(buttons, 2);
+
+        panel.Children.Add(fontLabel);
+        panel.Children.Add(fontComboBox);
+        panel.Children.Add(sizeLabel);
+        panel.Children.Add(sizeComboBox);
+        panel.Children.Add(buttons);
+
+        var dialog = new Window
+        {
+            Title = "글꼴 설정",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Background = background,
+            Foreground = foreground,
+            Content = panel,
+        };
+
+        bool ApplyValues()
+        {
+            var font = fontComboBox.SelectedItem as string ?? fontComboBox.Text;
+            if (string.IsNullOrWhiteSpace(font) || !double.TryParse(sizeComboBox.Text, out var size))
+            {
+                System.Windows.MessageBox.Show(dialog, "글꼴과 크기를 확인해 주세요.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return false;
+            }
+
+            CurrentTab.FontFamily = font.Trim();
+            CurrentTab.FontSize = Math.Clamp(size, 8, 36);
+            UpdateStyleControlsFromCurrentTab();
+            ApplyCurrentTabStyle(updatePreview: true);
+            return true;
+        }
+
+        applyButton.Click += (_, _) =>
+        {
+            if (ApplyValues())
+            {
+                dialog.DialogResult = true;
+            }
+        };
+        saveDefaultButton.Click += (_, _) =>
+        {
+            if (!ApplyValues())
+            {
+                return;
+            }
+
+            _defaultStyle = new EditorStyleSettings
+            {
+                FontFamily = CurrentTab.FontFamily,
+                FontSize = CurrentTab.FontSize,
+            };
+            StatusTextBlock.Text = $"새 탭 기본 스타일 저장: {CurrentTab.FontFamily}, {CurrentTab.FontSize:0}px";
+            QueueSessionSave();
+            dialog.DialogResult = true;
+        };
+
+        _ = dialog.ShowDialog();
+    }
+
     private void FontFamilyMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         if (CurrentTab is null)
@@ -1305,10 +1436,8 @@ public partial class MainWindow : Window
 
         if (_mode == DocumentMode.Preview && _isPreviewReady && PreviewWebView.CoreWebView2 is not null)
         {
-            await HighlightPreviewSearchAsync(query);
             var queryJson = JsonSerializer.Serialize(query);
-            var backwards = forward ? "false" : "true";
-            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.find({queryJson}, false, {backwards}, true, false, false, false);");
+            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadFindNext?.({queryJson}, {(forward ? "true" : "false")});");
             if (keepSearchFocus)
             {
                 SearchTextBox.Focus();
@@ -1318,26 +1447,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var comparison = StringComparison.CurrentCultureIgnoreCase;
-        var start = _lastSearchIndex >= 0 ? _lastSearchIndex + (forward ? 1 : -1) : EditorTextBox.SelectionStart;
-        int index;
-        if (forward)
-        {
-            index = text.IndexOf(query, Math.Clamp(start, 0, text.Length), comparison);
-            if (index < 0)
-            {
-                index = text.IndexOf(query, 0, comparison);
-            }
-        }
-        else
-        {
-            index = text.LastIndexOf(query, Math.Clamp(start, 0, Math.Max(0, text.Length - 1)), comparison);
-            if (index < 0)
-            {
-                index = text.LastIndexOf(query, comparison);
-            }
-        }
-
+        var index = FindEditorMatchIndex(text, query, forward);
         if (index < 0)
         {
             SearchStatusTextBlock.Text = "0개";
@@ -1358,6 +1468,49 @@ public partial class MainWindow : Window
         }
 
         UpdateSearchStatus();
+    }
+
+    private int FindEditorMatchIndex(string text, string query, bool forward)
+    {
+        var comparison = StringComparison.CurrentCultureIgnoreCase;
+        var selectedMatch =
+            EditorTextBox.SelectionLength == query.Length &&
+            string.Equals(EditorTextBox.SelectedText, query, comparison);
+
+        if (forward)
+        {
+            var start = selectedMatch
+                ? EditorTextBox.SelectionStart + query.Length
+                : _lastSearchIndex >= 0
+                    ? _lastSearchIndex + query.Length
+                    : EditorTextBox.SelectionStart;
+            var forwardIndex = text.IndexOf(query, Math.Clamp(start, 0, text.Length), comparison);
+            if (forwardIndex < 0)
+            {
+                forwardIndex = text.IndexOf(query, 0, comparison);
+            }
+
+            return forwardIndex;
+        }
+
+        var backwardStart = selectedMatch
+            ? EditorTextBox.SelectionStart - 1
+            : _lastSearchIndex >= 0
+                ? _lastSearchIndex - 1
+                : EditorTextBox.SelectionStart - 1;
+
+        if (backwardStart < 0)
+        {
+            backwardStart = text.Length - 1;
+        }
+
+        var backwardIndex = text.LastIndexOf(query, Math.Clamp(backwardStart, 0, Math.Max(0, text.Length - 1)), comparison);
+        if (backwardIndex < 0)
+        {
+            backwardIndex = text.LastIndexOf(query, comparison);
+        }
+
+        return backwardIndex;
     }
 
     private void ReplaceOne()
