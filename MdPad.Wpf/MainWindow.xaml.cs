@@ -1680,7 +1680,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.14.001";
+            return "2026.05.14.002";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
