@@ -6,7 +6,10 @@ using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -43,6 +46,7 @@ public partial class MainWindow : Window
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
+    private string _lastRenderedHtml = string.Empty;
 
     public MainWindow()
     {
@@ -120,7 +124,7 @@ public partial class MainWindow : Window
         ApplyMode(DocumentMode.Edit);
         var tab = new DocumentTab
         {
-            Title = title,
+            Title = title == "Untitled" && string.IsNullOrEmpty(markdown) ? GetNextUntitledTitle() : title,
             Markdown = markdown,
             FontFamily = _defaultStyle.FontFamily,
             FontSize = _defaultStyle.FontSize,
@@ -132,6 +136,23 @@ public partial class MainWindow : Window
         QueueSessionSave();
     }
 
+    private string GetNextUntitledTitle()
+    {
+        var used = Tabs
+            .Where(tab => string.IsNullOrWhiteSpace(tab.FilePath) && tab.Title.StartsWith("Untitled - ", StringComparison.OrdinalIgnoreCase))
+            .Select(tab => int.TryParse(tab.Title["Untitled - ".Length..], out var number) ? number : 0)
+            .Where(number => number > 0)
+            .ToHashSet();
+
+        var next = 1;
+        while (used.Contains(next))
+        {
+            next++;
+        }
+
+        return $"Untitled - {next}";
+    }
+
     private void Tab_OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(DocumentTab.DisplayTitle))
@@ -139,7 +160,7 @@ public partial class MainWindow : Window
             TabsListBox.Items.Refresh();
         }
 
-        if (e.PropertyName is nameof(DocumentTab.DisplayTitle) or nameof(DocumentTab.Markdown) or nameof(DocumentTab.FilePath) or nameof(DocumentTab.IsDirty))
+        if (e.PropertyName is nameof(DocumentTab.DisplayTitle) or nameof(DocumentTab.Markdown) or nameof(DocumentTab.FilePath) or nameof(DocumentTab.IsDirty) or nameof(DocumentTab.CodeBlockStates))
         {
             QueueSessionSave();
         }
@@ -438,9 +459,13 @@ public partial class MainWindow : Window
 
     private void PreviewModeButton_OnChecked(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Preview);
 
+    private void SplitModeButton_OnChecked(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Split);
+
     private void EditModeMenuItem_OnClick(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Edit);
 
     private void PreviewModeMenuItem_OnClick(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Preview);
+
+    private void SplitModeMenuItem_OnClick(object sender, RoutedEventArgs e) => ApplyMode(DocumentMode.Split);
 
     private void DefaultThemeMenuItem_OnClick(object sender, RoutedEventArgs e) => SetTheme(ThemeMode.Default);
 
@@ -449,11 +474,28 @@ public partial class MainWindow : Window
     private void ApplyMode(DocumentMode mode)
     {
         _mode = mode;
-        EditorHost.Visibility = mode == DocumentMode.Edit ? Visibility.Visible : Visibility.Collapsed;
-        PreviewHost.Visibility = mode == DocumentMode.Preview ? Visibility.Visible : Visibility.Collapsed;
+        var showEditor = mode is DocumentMode.Edit or DocumentMode.Split;
+        var showPreview = mode is DocumentMode.Preview or DocumentMode.Split;
+        EditorHost.Visibility = showEditor ? Visibility.Visible : Visibility.Collapsed;
+        PreviewHost.Visibility = showPreview ? Visibility.Visible : Visibility.Collapsed;
+        SplitGridSplitter.Visibility = mode == DocumentMode.Split ? Visibility.Visible : Visibility.Collapsed;
+        EditorColumn.Width = mode switch
+        {
+            DocumentMode.Preview => new GridLength(0),
+            DocumentMode.Split => new GridLength(1, GridUnitType.Star),
+            _ => new GridLength(1, GridUnitType.Star),
+        };
+        SplitSeparatorColumn.Width = mode == DocumentMode.Split ? new GridLength(5) : new GridLength(0);
+        PreviewColumn.Width = mode switch
+        {
+            DocumentMode.Preview => new GridLength(1, GridUnitType.Star),
+            DocumentMode.Split => new GridLength(1, GridUnitType.Star),
+            _ => new GridLength(0),
+        };
         EditModeButton.IsChecked = mode == DocumentMode.Edit;
         PreviewModeButton.IsChecked = mode == DocumentMode.Preview;
-        if (mode == DocumentMode.Preview)
+        SplitModeButton.IsChecked = mode == DocumentMode.Split;
+        if (showPreview)
         {
             RefreshPreview();
         }
@@ -463,7 +505,7 @@ public partial class MainWindow : Window
 
     private void QueuePreviewRefresh()
     {
-        if (_mode != DocumentMode.Preview)
+        if (_mode is not (DocumentMode.Preview or DocumentMode.Split))
         {
             return;
         }
@@ -487,7 +529,7 @@ public partial class MainWindow : Window
             Math.Abs(cache.FontSize - CurrentTab.FontSize) > 0.001 ||
             cache.Theme != _theme)
         {
-            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme));
+            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, CurrentTab.CodeBlockStates));
             _previewCache[CurrentTab.Id] = cache;
             cacheChanged = true;
         }
@@ -498,14 +540,21 @@ public partial class MainWindow : Window
         }
 
         PreviewWebView.NavigateToString(cache.Html);
+        _lastRenderedHtml = cache.Html;
         _renderedPreviewTabId = CurrentTab.Id;
     }
 
-    private void PreviewWebView_OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
+    private async void PreviewWebView_OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs e)
     {
         if (!e.IsSuccess)
         {
             StatusTextBlock.Text = "미리보기 렌더링 실패";
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(SearchTextBox.Text))
+        {
+            await HighlightPreviewSearchAsync(SearchTextBox.Text);
         }
     }
 
@@ -551,6 +600,26 @@ public partial class MainWindow : Window
                         RefreshPreview();
                     }
                     break;
+                case "edit-code-block":
+                    if (root.TryGetProperty("blockIndex", out var editBlockIndex))
+                    {
+                        FocusCodeBlockInEditor(editBlockIndex.GetInt32());
+                    }
+                    break;
+                case "set-code-collapsed":
+                    if (root.TryGetProperty("key", out var collapsedKey) &&
+                        root.TryGetProperty("collapsed", out var collapsedValue))
+                    {
+                        UpdateCodeBlockState(collapsedKey.GetString(), state => state.Collapsed = collapsedValue.GetBoolean());
+                    }
+                    break;
+                case "set-code-wrapped":
+                    if (root.TryGetProperty("key", out var wrappedKey) &&
+                        root.TryGetProperty("wrapped", out var wrappedValue))
+                    {
+                        UpdateCodeBlockState(wrappedKey.GetString(), state => state.Wrapped = wrappedValue.GetBoolean());
+                    }
+                    break;
                 case "open-link":
                     if (root.TryGetProperty("href", out var href))
                     {
@@ -580,6 +649,13 @@ public partial class MainWindow : Window
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.F)
         {
             ShowSearch();
+            e.Handled = true;
+            return;
+        }
+
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.R)
+        {
+            ShowReplace();
             e.Handled = true;
             return;
         }
@@ -770,7 +846,16 @@ public partial class MainWindow : Window
 
     private void InsertChecklistMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n- [ ] 할 일\n- [ ] 확인할 일\n");
 
-    private void InsertCodeBlockMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n```txt\n코드\n```\n");
+    private void InsertCodeBlockMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        ApplyMode(DocumentMode.Edit);
+        EditorTextBox.Focus();
+        const string prefix = "\n```txt\n";
+        const string suffix = "\n```\n";
+        var start = EditorTextBox.SelectionStart;
+        EditorTextBox.SelectedText = prefix + suffix;
+        EditorTextBox.Select(start + prefix.Length, 0);
+    }
 
     private void InsertImageMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n![설명](https://example.com/image.png)\n");
 
@@ -888,6 +973,7 @@ public partial class MainWindow : Window
     private void ShowSearch()
     {
         SearchBar.Visibility = Visibility.Visible;
+        ReplaceBar.Visibility = Visibility.Collapsed;
         SearchTextBox.Focus();
         SearchTextBox.SelectAll();
         UpdateSearchStatus();
@@ -898,6 +984,107 @@ public partial class MainWindow : Window
     private void IncreaseFontMenuItem_OnClick(object sender, RoutedEventArgs e) => AdjustCurrentTabFontSize(1);
 
     private void DecreaseFontMenuItem_OnClick(object sender, RoutedEventArgs e) => AdjustCurrentTabFontSize(-1);
+
+    private void FontFamilyMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var comboBox = new System.Windows.Controls.ComboBox
+        {
+            ItemsSource = FontFamilyComboBox.ItemsSource,
+            SelectedItem = CurrentTab.FontFamily,
+            IsEditable = true,
+            MinWidth = 320,
+            Height = 28,
+            Margin = new Thickness(0, 8, 0, 12),
+        };
+
+        ShowSimpleSelectionDialog("현재 탭 글꼴", comboBox, () =>
+        {
+            var value = comboBox.SelectedItem as string ?? comboBox.Text;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            CurrentTab.FontFamily = value.Trim();
+            UpdateStyleControlsFromCurrentTab();
+            ApplyCurrentTabStyle(updatePreview: true);
+            return true;
+        });
+    }
+
+    private void FontSizeMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var comboBox = new System.Windows.Controls.ComboBox
+        {
+            ItemsSource = _fontSizes,
+            SelectedItem = _fontSizes.FirstOrDefault(size => Math.Abs(size - CurrentTab.FontSize) < 0.001),
+            Text = CurrentTab.FontSize.ToString("0"),
+            IsEditable = true,
+            MinWidth = 120,
+            Height = 28,
+            Margin = new Thickness(0, 8, 0, 12),
+        };
+
+        ShowSimpleSelectionDialog("현재 탭 글자 크기", comboBox, () =>
+        {
+            if (!double.TryParse(comboBox.Text, out var value))
+            {
+                return false;
+            }
+
+            CurrentTab.FontSize = Math.Clamp(value, 8, 36);
+            UpdateStyleControlsFromCurrentTab();
+            ApplyCurrentTabStyle(updatePreview: true);
+            return true;
+        });
+    }
+
+    private void ShowSimpleSelectionDialog(string title, System.Windows.Controls.Control input, Func<bool> apply)
+    {
+        var okButton = new System.Windows.Controls.Button { Content = "적용", Width = 72, Height = 28, IsDefault = true, Margin = new Thickness(0, 0, 6, 0) };
+        var cancelButton = new System.Windows.Controls.Button { Content = "취소", Width = 72, Height = 28, IsCancel = true };
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right };
+        buttons.Children.Add(okButton);
+        buttons.Children.Add(cancelButton);
+
+        var panel = new StackPanel { Margin = new Thickness(16) };
+        panel.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(input);
+        panel.Children.Add(buttons);
+
+        var dialog = new Window
+        {
+            Title = title,
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Content = panel,
+        };
+
+        okButton.Click += (_, _) =>
+        {
+            if (!apply())
+            {
+                System.Windows.MessageBox.Show(dialog, "입력값이 올바르지 않습니다.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            dialog.DialogResult = true;
+        };
+
+        _ = dialog.ShowDialog();
+    }
 
     private void TableShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
         ConfigureStyleShortcut("표 삽입", _styleShortcuts.Table, value => _styleShortcuts.Table = value);
@@ -1024,7 +1211,7 @@ public partial class MainWindow : Window
     private void HideSearch()
     {
         SearchBar.Visibility = Visibility.Collapsed;
-        if (_mode == DocumentMode.Edit)
+        if (_mode is DocumentMode.Edit or DocumentMode.Split)
         {
             EditorTextBox.Focus();
         }
@@ -1032,10 +1219,56 @@ public partial class MainWindow : Window
 
     private void CloseSearchButton_OnClick(object sender, RoutedEventArgs e) => HideSearch();
 
+    private void ShowReplace()
+    {
+        ReplaceBar.Visibility = Visibility.Visible;
+        SearchBar.Visibility = Visibility.Collapsed;
+        if (string.IsNullOrEmpty(ReplaceFindTextBox.Text))
+        {
+            ReplaceFindTextBox.Text = SearchTextBox.Text;
+        }
+
+        ReplaceFindTextBox.Focus();
+        ReplaceFindTextBox.SelectAll();
+    }
+
+    private void CloseReplaceButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        ReplaceBar.Visibility = Visibility.Collapsed;
+        if (_mode is DocumentMode.Edit or DocumentMode.Split)
+        {
+            EditorTextBox.Focus();
+        }
+    }
+
+    private void ReplaceFindTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
+    {
+        SearchTextBox.Text = ReplaceFindTextBox.Text;
+        _lastSearchIndex = -1;
+        UpdateSearchStatus();
+    }
+
+    private void ReplaceTextBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            ReplaceOne();
+            e.Handled = true;
+        }
+    }
+
+    private void ReplaceOneButton_OnClick(object sender, RoutedEventArgs e) => ReplaceOne();
+
+    private void ReplaceAllButton_OnClick(object sender, RoutedEventArgs e) => ReplaceAll();
+
     private void SearchTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
         _lastSearchIndex = -1;
         UpdateSearchStatus();
+        if (_mode is DocumentMode.Preview or DocumentMode.Split)
+        {
+            _ = HighlightPreviewSearchAsync(SearchTextBox.Text);
+        }
     }
 
     private void SearchTextBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -1072,6 +1305,7 @@ public partial class MainWindow : Window
 
         if (_mode == DocumentMode.Preview && _isPreviewReady && PreviewWebView.CoreWebView2 is not null)
         {
+            await HighlightPreviewSearchAsync(query);
             var queryJson = JsonSerializer.Serialize(query);
             var backwards = forward ? "false" : "true";
             await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.find({queryJson}, false, {backwards}, true, false, false, false);");
@@ -1124,6 +1358,115 @@ public partial class MainWindow : Window
         }
 
         UpdateSearchStatus();
+    }
+
+    private void ReplaceOne()
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var findText = ReplaceFindTextBox.Text;
+        if (string.IsNullOrEmpty(findText))
+        {
+            return;
+        }
+
+        SearchTextBox.Text = findText;
+        if (ReplaceSelectionRadio.IsChecked == true && EditorTextBox.SelectionLength > 0)
+        {
+            EditorTextBox.SelectedText = ReplaceTextBox.Text;
+            CurrentTab.Markdown = EditorTextBox.Text;
+            StatusTextBlock.Text = "선택 영역 바꾸기 완료";
+            return;
+        }
+
+        Find(forward: true, keepSearchFocus: true);
+        if (EditorTextBox.SelectionLength == findText.Length &&
+            string.Equals(EditorTextBox.SelectedText, findText, StringComparison.CurrentCultureIgnoreCase))
+        {
+            EditorTextBox.SelectedText = ReplaceTextBox.Text;
+            CurrentTab.Markdown = EditorTextBox.Text;
+            StatusTextBlock.Text = "바꾸기 완료";
+        }
+    }
+
+    private void ReplaceAll()
+    {
+        var findText = ReplaceFindTextBox.Text;
+        if (string.IsNullOrEmpty(findText))
+        {
+            return;
+        }
+
+        var replaceText = ReplaceTextBox.Text;
+        var total = 0;
+        if (ReplaceAllTabsRadio.IsChecked == true)
+        {
+            foreach (var tab in Tabs)
+            {
+                var (updated, count) = ReplaceAllInText(tab.Markdown, findText, replaceText);
+                if (count <= 0)
+                {
+                    continue;
+                }
+
+                tab.Markdown = updated;
+                _previewCache.Remove(tab.Id);
+                total += count;
+            }
+
+            LoadCurrentTabIntoEditor();
+        }
+        else if (ReplaceSelectionRadio.IsChecked == true && EditorTextBox.SelectionLength > 0 && CurrentTab is not null)
+        {
+            var (updated, count) = ReplaceAllInText(EditorTextBox.SelectedText, findText, replaceText);
+            if (count > 0)
+            {
+                EditorTextBox.SelectedText = updated;
+                CurrentTab.Markdown = EditorTextBox.Text;
+                total = count;
+            }
+        }
+        else if (CurrentTab is not null)
+        {
+            var (updated, count) = ReplaceAllInText(CurrentTab.Markdown, findText, replaceText);
+            if (count > 0)
+            {
+                CurrentTab.Markdown = updated;
+                LoadCurrentTabIntoEditor();
+                _previewCache.Remove(CurrentTab.Id);
+                total = count;
+            }
+        }
+
+        _renderedPreviewTabId = null;
+        QueuePreviewRefresh();
+        UpdateSearchStatus();
+        StatusTextBlock.Text = $"바꾸기 완료: {total:N0}개";
+    }
+
+    private static (string Text, int Count) ReplaceAllInText(string text, string findText, string replaceText)
+    {
+        var count = Regex.Matches(text, Regex.Escape(findText), RegexOptions.IgnoreCase).Count;
+        if (count == 0)
+        {
+            return (text, 0);
+        }
+
+        return (Regex.Replace(text, Regex.Escape(findText), replaceText.Replace("$", "$$"), RegexOptions.IgnoreCase), count);
+    }
+
+    private async Task HighlightPreviewSearchAsync(string query)
+    {
+        if (!_isPreviewReady || PreviewWebView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var queryJson = JsonSerializer.Serialize(query ?? string.Empty);
+        await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadHighlightSearch?.({queryJson});");
     }
 
     private void UpdateSearchStatus()
@@ -1210,6 +1553,127 @@ public partial class MainWindow : Window
 
         return string.Join(Environment.NewLine, result);
     }
+
+    private void CollapseAllCodeButton_OnClick(object sender, RoutedEventArgs e) => SetAllCodeBlocksCollapsed(true);
+
+    private void ExpandAllCodeButton_OnClick(object sender, RoutedEventArgs e) => SetAllCodeBlocksCollapsed(false);
+
+    private void SetAllCodeBlocksCollapsed(bool collapsed)
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var states = new Dictionary<string, CodeBlockViewState>(CurrentTab.CodeBlockStates);
+        foreach (var block in GetCodeBlocks(CurrentTab.Markdown))
+        {
+            if (!states.TryGetValue(block.StateKey, out var state))
+            {
+                state = new CodeBlockViewState();
+                states[block.StateKey] = state;
+            }
+
+            state.Collapsed = collapsed;
+        }
+
+        CurrentTab.CodeBlockStates = states;
+        _previewCache.Remove(CurrentTab.Id);
+        _renderedPreviewTabId = null;
+        QueueSessionSave();
+        if (_mode is DocumentMode.Preview or DocumentMode.Split)
+        {
+            RefreshPreview();
+        }
+
+        StatusTextBlock.Text = collapsed ? "코드블럭을 모두 접었습니다." : "코드블럭을 모두 펼쳤습니다.";
+    }
+
+    private void UpdateCodeBlockState(string? key, Action<CodeBlockViewState> update)
+    {
+        if (CurrentTab is null || string.IsNullOrWhiteSpace(key))
+        {
+            return;
+        }
+
+        var states = new Dictionary<string, CodeBlockViewState>(CurrentTab.CodeBlockStates);
+        if (!states.TryGetValue(key, out var state))
+        {
+            state = new CodeBlockViewState();
+            states[key] = state;
+        }
+
+        update(state);
+        CurrentTab.CodeBlockStates = states;
+        _previewCache.Remove(CurrentTab.Id);
+        QueueSessionSave();
+    }
+
+    private void FocusCodeBlockInEditor(int blockIndex)
+    {
+        if (CurrentTab is null)
+        {
+            return;
+        }
+
+        var block = GetCodeBlocks(CurrentTab.Markdown).FirstOrDefault(item => item.Index == blockIndex);
+        if (block is null)
+        {
+            return;
+        }
+
+        ApplyMode(DocumentMode.Edit);
+        LoadCurrentTabIntoEditor();
+        Dispatcher.BeginInvoke(() =>
+        {
+            var target = Math.Clamp(block.ContentStartIndex, 0, EditorTextBox.Text.Length);
+            EditorTextBox.Focus();
+            EditorTextBox.Select(target, 0);
+            var line = EditorTextBox.GetLineIndexFromCharacterIndex(target);
+            EditorTextBox.ScrollToLine(Math.Max(0, line - 2));
+            StatusTextBlock.Text = "코드블럭 편집 위치로 이동했습니다.";
+        }, DispatcherPriority.Background);
+    }
+
+    private static List<CodeBlockInfo> GetCodeBlocks(string? markdown)
+    {
+        var text = markdown ?? string.Empty;
+        var matches = Regex.Matches(
+            text,
+            @"(?ms)^[ \t]*```[^\r\n]*(?:\r?\n)(.*?)(?:\r?\n[ \t]*```)",
+            RegexOptions.Multiline);
+
+        var blocks = new List<CodeBlockInfo>();
+        for (var index = 0; index < matches.Count; index++)
+        {
+            var content = matches[index].Groups[1];
+            blocks.Add(new CodeBlockInfo(
+                index,
+                content.Index,
+                content.Index + content.Length,
+                content.Value,
+                $"{index}:{ComputeCodeBlockContentHash(content.Value)}"));
+        }
+
+        return blocks;
+    }
+
+    private static string ComputeCodeBlockContentHash(string text)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var ch in text ?? string.Empty)
+            {
+                hash ^= ch;
+                hash *= 16777619;
+            }
+
+            return hash.ToString("x8");
+        }
+    }
+
+    private sealed record CodeBlockInfo(int Index, int ContentStartIndex, int ContentEndIndex, string CodeText, string StateKey);
 
     private async Task OpenProtocolArgumentAsync(string rawArgument)
     {
@@ -1417,6 +1881,7 @@ public partial class MainWindow : Window
                 Markdown = document.Markdown ?? string.Empty,
                 FontFamily = string.IsNullOrWhiteSpace(document.FontFamily) ? _defaultStyle.FontFamily : document.FontFamily,
                 FontSize = document.FontSize <= 0 ? _defaultStyle.FontSize : document.FontSize,
+                CodeBlockStates = document.CodeBlockStates ?? [],
                 IsDirty = document.IsDirty,
             };
             tab.PropertyChanged += Tab_OnPropertyChanged;
@@ -1496,6 +1961,7 @@ public partial class MainWindow : Window
                 IsDirty = tab.IsDirty,
                 FontFamily = tab.FontFamily,
                 FontSize = tab.FontSize,
+                CodeBlockStates = tab.CodeBlockStates,
             }).ToList(),
         });
     }
@@ -1609,7 +2075,7 @@ public partial class MainWindow : Window
 
         if (updatePreview)
         {
-            if (_mode == DocumentMode.Preview)
+            if (_mode is DocumentMode.Preview or DocumentMode.Split)
             {
                 ApplyPreviewStyleOnly(CurrentTab);
             }
@@ -1645,7 +2111,7 @@ public partial class MainWindow : Window
         ApplyTheme();
         _previewCache.Clear();
         _renderedPreviewTabId = null;
-        if (_mode == DocumentMode.Preview)
+        if (_mode is DocumentMode.Preview or DocumentMode.Split)
         {
             RefreshPreview();
         }
@@ -1680,6 +2146,15 @@ public partial class MainWindow : Window
         TabBarHost.Background = Brush(dark ? "#252526" : "#E5E5E5");
         TabBarHost.BorderBrush = Brush(dark ? "#3E3E42" : "#C8C8C8");
         StatusHost.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
+        SearchBar.Background = Brush(dark ? "#2B2B2B" : "#FFF4C2");
+        ReplaceBar.Background = Brush(dark ? "#2B2B2B" : "#FFF4C2");
+        SearchTextBox.Background = Brush(dark ? "#1E1E1E" : "#FFFFFF");
+        SearchTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
+        ReplaceFindTextBox.Background = Brush(dark ? "#1E1E1E" : "#FFFFFF");
+        ReplaceFindTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
+        ReplaceTextBox.Background = Brush(dark ? "#1E1E1E" : "#FFFFFF");
+        ReplaceTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
+        SearchStatusTextBlock.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
         var editorBackground = Brush(dark ? "#3B3B3B" : "#FFFFFF");
         var editorForeground = Brush(dark ? "#F0F0F0" : "#111827");
         EditorHost.Background = editorBackground;
@@ -1714,7 +2189,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.14.003";
+            return "2026.05.14.004";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

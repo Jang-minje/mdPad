@@ -7,6 +7,7 @@ public enum DocumentMode
 {
     Edit,
     Preview,
+    Split,
 }
 
 public enum ThemeMode
@@ -23,6 +24,7 @@ public sealed class DocumentTab : INotifyPropertyChanged
     private bool _isDirty;
     private string _fontFamily = "Malgun Gothic";
     private double _fontSize = 16;
+    private Dictionary<string, CodeBlockViewState> _codeBlockStates = [];
 
     public Guid Id { get; init; } = Guid.NewGuid();
 
@@ -80,6 +82,12 @@ public sealed class DocumentTab : INotifyPropertyChanged
         set => SetField(ref _fontSize, Math.Clamp(value, 8, 36));
     }
 
+    public Dictionary<string, CodeBlockViewState> CodeBlockStates
+    {
+        get => _codeBlockStates;
+        set => SetField(ref _codeBlockStates, value ?? []);
+    }
+
     public string DisplayTitle => $"{(IsDirty ? "*" : string.Empty)}{Title}";
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -105,4 +113,10 @@ public sealed class DocumentTab : INotifyPropertyChanged
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
+}
+
+public sealed class CodeBlockViewState
+{
+    public bool Collapsed { get; set; }
+    public bool Wrapped { get; set; }
 }

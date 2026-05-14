@@ -14,6 +14,7 @@ if not exist "C:\Program Files (x86)\NSIS\makensis.exe" (
   exit /b 1
 )
 
+set APP_VERSION=2026.05.14.004
 taskkill /IM MdPad.Wpf.exe /F >nul 2>nul
 
 dotnet build MdPadWv2.sln -c Release
@@ -26,6 +27,9 @@ if errorlevel 1 exit /b %errorlevel%
 "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
 if errorlevel 1 exit /b %errorlevel%
 
+copy /Y "release\MdPadWv2-Setup-%APP_VERSION%.exe" "release\MdPadWv2-Setup.exe" >nul
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$nas='\\kait-nas\'+[char]0xacf5+[char]0xc6a9+'\UTIL'; if (Test-Path $nas) { Copy-Item -LiteralPath 'release\MdPadWv2-Setup-%APP_VERSION%.exe' -Destination (Join-Path $nas 'MdPadWv2-Setup-%APP_VERSION%.exe') -Force; Copy-Item -LiteralPath 'release\MdPadWv2-Setup.exe' -Destination (Join-Path $nas 'MdPadWv2-Setup.exe') -Force }"
+
 echo.
-echo Setup created: release\MdPadWv2-Setup.exe
+echo Setup created: release\MdPadWv2-Setup-%APP_VERSION%.exe
 exit /b %errorlevel%

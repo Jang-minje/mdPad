@@ -25,12 +25,19 @@ public sealed class MarkdownRenderer
         _highlightJs = ReadAsset(Path.Combine(assetDirectory, "highlight.min.js"));
     }
 
-    public string RenderDocument(string title, string markdown, string fontFamily, double fontSize, ThemeMode theme)
+    public string RenderDocument(
+        string title,
+        string markdown,
+        string fontFamily,
+        double fontSize,
+        ThemeMode theme,
+        IReadOnlyDictionary<string, CodeBlockViewState>? codeBlockStates = null)
     {
         var articleHtml = Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
         var titleJson = JsonSerializer.Serialize(string.IsNullOrWhiteSpace(title) ? "MD Pad" : title);
         var fontJson = JsonSerializer.Serialize(fontFamily);
         var articleJson = JsonSerializer.Serialize(articleHtml);
+        var codeStatesJson = JsonSerializer.Serialize(codeBlockStates ?? new Dictionary<string, CodeBlockViewState>());
         var isDark = theme == ThemeMode.Dark;
         var pageBackground = isDark ? "#0d1117" : "#ffffff";
         var textColor = isDark ? "#e6edf3" : "#24292f";
@@ -177,11 +184,26 @@ public sealed class MarkdownRenderer
               border-bottom: 1px solid {{borderColor}};
               background: {{toolbarBackground}};
             }
+            .code-toolbar-left {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              min-width: 0;
+              flex: 1;
+            }
             .code-actions {
               display: flex;
               align-items: center;
               gap: 6px;
               min-width: 0;
+            }
+            .code-title {
+              min-width: 0;
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+              color: {{mutedColor}};
+              font-size: 12px;
             }
             .code-chip {
               border: 1px solid {{borderColor}};
@@ -198,6 +220,21 @@ public sealed class MarkdownRenderer
             select.code-chip {
               max-width: 92px;
               outline: none;
+            }
+            mark.mdpad-search-highlight {
+              background: {{markBackground}} !important;
+              color: {{markText}} !important;
+              border-radius: 2px;
+              padding: 0 1px;
+            }
+            .code-wrap.is-search-hit {
+              animation: mdpad-code-pulse 1.1s ease-in-out 0s 3;
+              border-color: #f59e0b;
+              box-shadow: 0 0 0 2px rgba(245, 158, 11, .22);
+            }
+            @keyframes mdpad-code-pulse {
+              0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, .0); }
+              50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, .35); }
             }
             .code-wrap.is-collapsed pre {
               display: none;
@@ -223,7 +260,8 @@ public sealed class MarkdownRenderer
                 title: {{titleJson}},
                 articleHtml: {{articleJson}},
                 fontFamily: {{fontJson}},
-                fontSize: {{fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}}
+                fontSize: {{fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
+                codeStates: {{codeStatesJson}}
               };
               const post = (message) => {
                 try { window.chrome?.webview?.postMessage(message); } catch {}
@@ -260,16 +298,46 @@ public sealed class MarkdownRenderer
                 const checkbox = item.querySelector('input[type="checkbox"]');
                 if (checkbox) item.classList.toggle('mn-checked', !!checkbox.checked);
               });
+              const codeHash = (text) => {
+                let hash = 2166136261 >>> 0;
+                for (let i = 0; i < (text || '').length; i += 1) {
+                  hash ^= text.charCodeAt(i);
+                  hash = Math.imul(hash, 16777619) >>> 0;
+                }
+                return hash.toString(16).padStart(8, '0');
+              };
+              const codeTitle = (text) => {
+                const first = ((text || '').split(/\r?\n/)[0] || '').trim();
+                if (first.startsWith('--')) return first.slice(2).trim();
+                if (first.startsWith('#')) return first.replace(/^#+\s*/, '').trim();
+                if (first.startsWith('/*')) return first.replace(/^\/\*\s*/, '').replace(/\s*\*\/$/, '').trim();
+                return '';
+              };
+              const setCollapsedVisual = (wrap, toggle, collapsed) => {
+                wrap.classList.toggle('is-collapsed', !!collapsed);
+                toggle.textContent = collapsed ? '펼치기' : '접기';
+              };
+              const setWrappedVisual = (wrap, wrapped) => {
+                wrap.classList.toggle('is-wrapped', !!wrapped);
+              };
               let codeIndex = 0;
               article.querySelectorAll('pre > code').forEach((code) => {
                 const pre = code.parentElement;
                 if (!pre || pre.parentElement?.classList.contains('code-wrap')) return;
                 const languageClass = Array.from(code.classList).find((item) => item.startsWith('language-')) || 'language-text';
                 const language = languageClass.replace(/^language-/, '') || 'text';
+                const text = code.textContent || '';
+                const currentIndex = codeIndex++;
+                const stateKey = `${currentIndex}:${codeHash(text)}`;
+                const state = payload.codeStates?.[stateKey] || {};
                 const wrap = document.createElement('section');
                 wrap.className = 'code-wrap';
+                wrap.dataset.blockIndex = String(currentIndex);
+                wrap.dataset.stateKey = stateKey;
                 const toolbar = document.createElement('div');
                 toolbar.className = 'code-toolbar';
+                const left = document.createElement('div');
+                left.className = 'code-toolbar-left';
                 const right = document.createElement('div');
                 right.className = 'code-actions';
                 const toggle = document.createElement('button');
@@ -291,38 +359,56 @@ public sealed class MarkdownRenderer
                   badge.appendChild(option);
                 });
                 badge.value = normalizedLanguage;
+                const title = document.createElement('span');
+                title.className = 'code-title';
+                title.textContent = codeTitle(text);
+                title.title = title.textContent;
+                const edit = document.createElement('button');
+                edit.type = 'button';
+                edit.className = 'code-chip';
+                edit.textContent = '편집';
                 const copy = document.createElement('button');
                 copy.type = 'button';
                 copy.className = 'code-chip';
                 copy.textContent = '복사';
-                const currentIndex = codeIndex++;
                 toggle.addEventListener('click', (event) => {
                   event.stopPropagation();
-                  wrap.classList.toggle('is-collapsed');
-                  toggle.textContent = wrap.classList.contains('is-collapsed') ? '펼치기' : '접기';
+                  const collapsed = !wrap.classList.contains('is-collapsed');
+                  setCollapsedVisual(wrap, toggle, collapsed);
+                  post({ type: 'set-code-collapsed', key: stateKey, collapsed });
                 });
                 wrapButton.addEventListener('click', (event) => {
                   event.stopPropagation();
-                  wrap.classList.toggle('is-wrapped');
+                  const wrapped = !wrap.classList.contains('is-wrapped');
+                  setWrappedVisual(wrap, wrapped);
+                  post({ type: 'set-code-wrapped', key: stateKey, wrapped });
                 });
                 badge.addEventListener('change', (event) => {
                   event.stopPropagation();
                   post({ type: 'change-code-language', blockIndex: currentIndex, language: badge.value || 'txt' });
                 });
+                edit.addEventListener('click', (event) => {
+                  event.stopPropagation();
+                  post({ type: 'edit-code-block', blockIndex: currentIndex });
+                });
                 copy.addEventListener('click', async (event) => {
                   event.stopPropagation();
-                  const text = code.textContent || '';
                   try { await navigator.clipboard.writeText(text); } catch {}
                   post({ type: 'copy-code', blockIndex: currentIndex, codeText: text });
                 });
+                left.appendChild(badge);
+                if (title.textContent) left.appendChild(title);
+                right.appendChild(edit);
                 right.appendChild(toggle);
                 right.appendChild(wrapButton);
                 right.appendChild(copy);
-                toolbar.appendChild(badge);
+                toolbar.appendChild(left);
                 toolbar.appendChild(right);
                 pre.parentNode.insertBefore(wrap, pre);
                 wrap.appendChild(toolbar);
                 wrap.appendChild(pre);
+                setCollapsedVisual(wrap, toggle, !!(state.collapsed ?? state.Collapsed));
+                setWrappedVisual(wrap, !!(state.wrapped ?? state.Wrapped));
                 if (window.hljs) window.hljs.highlightElement(code);
               });
               article.addEventListener('click', (event) => {
@@ -341,6 +427,60 @@ public sealed class MarkdownRenderer
                 clone.querySelectorAll('input').forEach((node) => node.remove());
                 post({ type: 'toggle-task', label: clone.textContent?.trim() || '' });
               });
+              const clearSearchHighlights = () => {
+                article.querySelectorAll('mark.mdpad-search-highlight').forEach((mark) => {
+                  const parent = mark.parentNode;
+                  if (!parent) return;
+                  parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+                  parent.normalize();
+                });
+                article.querySelectorAll('.code-wrap.is-search-hit').forEach((wrap) => wrap.classList.remove('is-search-hit'));
+              };
+              const highlightTextNode = (node, queryLower) => {
+                const text = node.nodeValue || '';
+                const lower = text.toLocaleLowerCase();
+                const index = lower.indexOf(queryLower);
+                if (index < 0) return;
+                const fragment = document.createDocumentFragment();
+                let cursor = 0;
+                let current = index;
+                while (current >= 0) {
+                  if (current > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, current)));
+                  const mark = document.createElement('mark');
+                  mark.className = 'mdpad-search-highlight';
+                  mark.textContent = text.slice(current, current + queryLower.length);
+                  fragment.appendChild(mark);
+                  cursor = current + queryLower.length;
+                  current = lower.indexOf(queryLower, cursor);
+                }
+                if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
+                node.parentNode?.replaceChild(fragment, node);
+              };
+              window.mdPadHighlightSearch = (query) => {
+                clearSearchHighlights();
+                const term = (query || '').toString();
+                if (!term) return;
+                const queryLower = term.toLocaleLowerCase();
+                article.querySelectorAll('.code-wrap').forEach((wrap) => {
+                  const code = wrap.querySelector('pre code');
+                  if (wrap.classList.contains('is-collapsed') && (code?.textContent || '').toLocaleLowerCase().includes(queryLower)) {
+                    wrap.classList.add('is-search-hit');
+                  }
+                });
+                const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, {
+                  acceptNode: (node) => {
+                    const parent = node.parentElement;
+                    if (!parent || !node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
+                    if (parent.closest('.code-toolbar, script, style')) return NodeFilter.FILTER_REJECT;
+                    return node.nodeValue.toLocaleLowerCase().includes(queryLower)
+                      ? NodeFilter.FILTER_ACCEPT
+                      : NodeFilter.FILTER_REJECT;
+                  }
+                });
+                const nodes = [];
+                while (walker.nextNode()) nodes.push(walker.currentNode);
+                nodes.forEach((node) => highlightTextNode(node, queryLower));
+              };
               window.addEventListener('wheel', (event) => {
                 if (!event.ctrlKey) return;
                 event.preventDefault();

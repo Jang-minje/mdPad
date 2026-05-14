@@ -60,6 +60,7 @@ public sealed class SessionDocument
     public bool IsDirty { get; set; }
     public string FontFamily { get; set; } = "Malgun Gothic";
     public double FontSize { get; set; } = 16;
+    public Dictionary<string, CodeBlockViewState> CodeBlockStates { get; set; } = [];
 }
 
 public sealed class EditorStyleSettings

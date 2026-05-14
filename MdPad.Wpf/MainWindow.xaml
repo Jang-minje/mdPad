@@ -175,6 +175,14 @@
             </Setter>
         </Style>
 
+        <Style x:Key="ToolbarComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="Foreground" Value="#111827" />
+            <Setter Property="BorderBrush" Value="#A8A8A8" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="TabListBoxItemStyle" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
@@ -259,12 +267,18 @@
             <MenuItem Header="보기(_V)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem Header="편집 모드" Click="EditModeMenuItem_OnClick" />
                 <MenuItem Header="미리보기 모드" Click="PreviewModeMenuItem_OnClick" />
+                <MenuItem Header="분할 모드" Click="SplitModeMenuItem_OnClick" />
                 <Separator />
                 <MenuItem x:Name="DefaultThemeMenuItem" Header="기본 테마" IsCheckable="True" Click="DefaultThemeMenuItem_OnClick" />
                 <MenuItem x:Name="DarkThemeMenuItem" Header="다크 테마" IsCheckable="True" Click="DarkThemeMenuItem_OnClick" />
             </MenuItem>
             <MenuItem Header="스타일(_S)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
-                <MenuItem Header="현재 스타일을 기본값으로 저장" Click="SaveDefaultStyleButton_OnClick" />
+                <MenuItem Header="글꼴">
+                    <MenuItem Header="현재 탭 글꼴..." Click="FontFamilyMenuItem_OnClick" />
+                    <MenuItem Header="현재 탭 크기..." Click="FontSizeMenuItem_OnClick" />
+                    <Separator />
+                    <MenuItem Header="기본값으로 저장" Click="SaveDefaultStyleButton_OnClick" />
+                </MenuItem>
                 <Separator />
                 <MenuItem x:Name="TableInsertMenuItem" Header="표 삽입" Click="InsertTableMenuItem_OnClick" />
                 <MenuItem x:Name="ChecklistInsertMenuItem" Header="체크리스트 삽입" Click="InsertChecklistMenuItem_OnClick" />
@@ -304,26 +318,20 @@
                     <Button Style="{StaticResource ToolbarButtonStyle}" Click="SaveAsButton_OnClick" Content="다른 저장" MinWidth="72" />
                     <Button Style="{StaticResource ToolbarButtonStyle}" Click="CloseTabButton_OnClick" Content="닫기" />
                     <Rectangle Width="1" Fill="#4A4A4A" Margin="4,2,8,2" />
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource ToolbarLabelBrush}" FontSize="12" Text="글꼴" />
-                    <ComboBox x:Name="FontFamilyComboBox"
-                              Width="150"
-                              Height="24"
-                              Margin="0,0,6,0"
-                              FontSize="12"
-                              SelectionChanged="FontFamilyComboBox_OnSelectionChanged" />
-                    <TextBlock VerticalAlignment="Center" Margin="0,0,4,0" Foreground="{DynamicResource ToolbarLabelBrush}" FontSize="12" Text="크기" />
-                    <ComboBox x:Name="FontSizeComboBox"
-                              Width="54"
-                              Height="24"
-                              Margin="0,0,6,0"
-                              FontSize="12"
-                              SelectionChanged="FontSizeComboBox_OnSelectionChanged" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="70" Click="SaveDefaultStyleButton_OnClick" Content="기본값" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertTableMenuItem_OnClick" Content="표" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertChecklistMenuItem_OnClick" Content="체크" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertCodeBlockMenuItem_OnClick" Content="코드" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertImageMenuItem_OnClick" Content="이미지" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertLinkMenuItem_OnClick" Content="링크" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertDividerMenuItem_OnClick" Content="구분선" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="82" Click="CollapseAllCodeButton_OnClick" Content="코드 접기" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="82" Click="ExpandAllCodeButton_OnClick" Content="코드 펼치기" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
                         <RadioButton x:Name="EditModeButton" Style="{StaticResource ModeButtonStyle}" Checked="EditModeButton_OnChecked" Content="편집" />
                         <RadioButton x:Name="PreviewModeButton" Style="{StaticResource ModeButtonStyle}" Checked="PreviewModeButton_OnChecked" Content="미리보기" />
+                        <RadioButton x:Name="SplitModeButton" Style="{StaticResource ModeButtonStyle}" Checked="SplitModeButton_OnChecked" Content="분할" />
                     </StackPanel>
                 </StackPanel>
             </DockPanel>
@@ -333,10 +341,10 @@
             <DockPanel LastChildFill="False">
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,12,0" Foreground="#CBD5E1" FontWeight="SemiBold" Text="스타일" />
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#94A3B8" Text="글꼴" />
-                <ComboBox DockPanel.Dock="Left" Width="220" Height="32" Margin="0,0,10,0" />
+                <ComboBox x:Name="FontFamilyComboBox" DockPanel.Dock="Left" Width="220" Height="32" Margin="0,0,10,0" SelectionChanged="FontFamilyComboBox_OnSelectionChanged" />
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#94A3B8" Text="크기" />
-                <ComboBox DockPanel.Dock="Left" Width="78" Height="32" Margin="0,0,10,0" />
-                <Button DockPanel.Dock="Left" Style="{StaticResource ToolbarButtonStyle}" MinWidth="96" Content="기본값 저장" />
+                <ComboBox x:Name="FontSizeComboBox" DockPanel.Dock="Left" Width="78" Height="32" Margin="0,0,10,0" SelectionChanged="FontSizeComboBox_OnSelectionChanged" />
+                <Button DockPanel.Dock="Left" Style="{StaticResource ToolbarButtonStyle}" MinWidth="96" Click="SaveDefaultStyleButton_OnClick" Content="기본값 저장" />
                 <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="4,0,0,0" Foreground="#94A3B8" Text="Ctrl+휠로 현재 탭 글자 크기 조절" />
             </DockPanel>
         </Border>
@@ -349,6 +357,24 @@
                 <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="FindPrevButton_OnClick" Content="이전" />
                 <TextBlock x:Name="SearchStatusTextBlock" DockPanel.Dock="Right" Width="96" VerticalAlignment="Center" Foreground="#8A6400" TextAlignment="Center" />
                 <TextBox x:Name="SearchTextBox" Style="{StaticResource ModernTextBoxStyle}" TextChanged="SearchTextBox_OnTextChanged" KeyDown="SearchTextBox_OnKeyDown" />
+            </DockPanel>
+        </Border>
+
+        <Border x:Name="ReplaceBar" Grid.Row="2" Background="#EEF2FF" BorderBrush="#A5B4FC" BorderThickness="0,0,0,1" Padding="10,7" Visibility="Collapsed">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Width="34" Click="CloseReplaceButton_OnClick" Content="×" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="ReplaceAllButton_OnClick" Content="모두 바꾸기" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="ReplaceOneButton_OnClick" Content="바꾸기" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="FindNextButton_OnClick" Content="다음 찾기" />
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,10,0">
+                    <RadioButton x:Name="ReplaceCurrentTabRadio" Foreground="{DynamicResource ToolbarButtonForegroundBrush}" Margin="0,0,8,0" IsChecked="True" Content="현재 탭" />
+                    <RadioButton x:Name="ReplaceAllTabsRadio" Foreground="{DynamicResource ToolbarButtonForegroundBrush}" Margin="0,0,8,0" Content="모든 탭" />
+                    <RadioButton x:Name="ReplaceSelectionRadio" Foreground="{DynamicResource ToolbarButtonForegroundBrush}" Content="선택 영역 우선" />
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold" Foreground="{DynamicResource ToolbarButtonForegroundBrush}" Text="찾기" />
+                <TextBox x:Name="ReplaceFindTextBox" DockPanel.Dock="Left" Width="220" Style="{StaticResource ModernTextBoxStyle}" TextChanged="ReplaceFindTextBox_OnTextChanged" KeyDown="ReplaceTextBox_OnKeyDown" />
+                <TextBlock DockPanel.Dock="Left" VerticalAlignment="Center" Margin="10,0,8,0" FontWeight="SemiBold" Foreground="{DynamicResource ToolbarButtonForegroundBrush}" Text="바꾸기" />
+                <TextBox x:Name="ReplaceTextBox" Style="{StaticResource ModernTextBoxStyle}" KeyDown="ReplaceTextBox_OnKeyDown" />
             </DockPanel>
         </Border>
 
@@ -423,8 +449,13 @@
             </DockPanel>
         </Border>
 
-        <Grid Grid.Row="4" Margin="0" PreviewMouseWheel="ContentHost_OnPreviewMouseWheel">
-            <Border x:Name="EditorHost" Background="#3B3B3B" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0">
+        <Grid x:Name="ContentGrid" Grid.Row="4" Margin="0" PreviewMouseWheel="ContentHost_OnPreviewMouseWheel">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="EditorColumn" Width="*" />
+                <ColumnDefinition x:Name="SplitSeparatorColumn" Width="0" />
+                <ColumnDefinition x:Name="PreviewColumn" Width="0" />
+            </Grid.ColumnDefinitions>
+            <Border x:Name="EditorHost" Grid.Column="0" Background="#3B3B3B" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0">
                 <TextBox x:Name="EditorTextBox"
                          AcceptsReturn="True"
                          AcceptsTab="True"
@@ -441,7 +472,8 @@
                          Padding="18,12"
                          TextWrapping="NoWrap" />
             </Border>
-            <Border x:Name="PreviewHost" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed">
+            <GridSplitter x:Name="SplitGridSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#3E3E42" Visibility="Collapsed" />
+            <Border x:Name="PreviewHost" Grid.Column="2" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed">
                 <wv2:WebView2 x:Name="PreviewWebView" DefaultBackgroundColor="#FFFAFAFA" NavigationCompleted="PreviewWebView_OnNavigationCompleted" />
             </Border>
         </Grid>
