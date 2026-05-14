@@ -221,6 +221,15 @@ public sealed class MarkdownRenderer
               max-width: 92px;
               outline: none;
             }
+            .marc-control {
+              display: inline-block;
+              margin: 0 1px;
+              padding: 0 3px;
+              border-radius: 4px;
+              background: {{(isDark ? "#3b2f12" : "#fff3bf")}};
+              color: {{(isDark ? "#f2cc60" : "#9a6700")}};
+              font-weight: 700;
+            }
             mark.mdpad-search-highlight {
               background: {{markBackground}} !important;
               color: {{markText}} !important;
@@ -296,13 +305,51 @@ public sealed class MarkdownRenderer
                   ]
                 }));
               };
+              const registerMarcHighlight = () => {
+                if (!window.hljs || window.hljs.getLanguage?.('marc')) return;
+                window.hljs.registerLanguage('marc', () => ({
+                  name: 'MARC',
+                  case_insensitive: true,
+                  contains: [
+                    { className: 'section', begin: '^[0-9]{3}', relevance: 10 },
+                    { className: 'symbol', begin: '\\x1F[a-z0-9]', relevance: 8 },
+                    { className: 'meta', begin: '[\\x1E\\x1D]', relevance: 5 },
+                    { className: 'number', begin: '\\b[0-9]{2}\\b', relevance: 1 }
+                  ]
+                }));
+              };
+              const visualizeMarcControls = (root) => {
+                const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+                  acceptNode: (node) => /[\x1F\x1E\x1D]/.test(node.nodeValue || '')
+                    ? NodeFilter.FILTER_ACCEPT
+                    : NodeFilter.FILTER_REJECT
+                });
+                const nodes = [];
+                while (walker.nextNode()) nodes.push(walker.currentNode);
+                nodes.forEach((node) => {
+                  const text = node.nodeValue || '';
+                  const fragment = document.createDocumentFragment();
+                  for (const ch of text) {
+                    if (ch === '\x1F' || ch === '\x1E' || ch === '\x1D') {
+                      const span = document.createElement('span');
+                      span.className = 'marc-control';
+                      span.textContent = ch === '\x1F' ? '␟' : ch === '\x1E' ? '␞' : '␝';
+                      fragment.appendChild(span);
+                    } else {
+                      fragment.appendChild(document.createTextNode(ch));
+                    }
+                  }
+                  node.parentNode?.replaceChild(fragment, node);
+                });
+              };
               const article = document.querySelector('.markdown-body');
               document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
               document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
               document.title = payload.title;
               article.innerHTML = payload.articleHtml || '';
               registerPowerShellHighlight();
-              const languages = ['text', 'txt', 'markdown', 'bash', 'shell', 'powershell', 'sql', 'json', 'xml', 'html', 'css', 'javascript', 'typescript', 'python', 'csharp', 'java', 'cpp', 'yaml'];
+              registerMarcHighlight();
+              const languages = ['text', 'txt', 'markdown', 'marc', 'bash', 'shell', 'powershell', 'sql', 'json', 'xml', 'html', 'css', 'javascript', 'typescript', 'python', 'csharp', 'java', 'cpp', 'yaml'];
               article.querySelectorAll('li').forEach((item) => {
                 const checkbox = item.querySelector('input[type="checkbox"]');
                 if (checkbox) item.classList.toggle('mn-checked', !!checkbox.checked);
@@ -420,6 +467,7 @@ public sealed class MarkdownRenderer
                 setCollapsedVisual(wrap, toggle, !!(state.collapsed ?? state.Collapsed));
                 setWrappedVisual(wrap, !!(state.wrapped ?? state.Wrapped));
                 if (window.hljs) window.hljs.highlightElement(code);
+                if (normalizedLanguage === 'marc') visualizeMarcControls(code);
               });
               article.addEventListener('click', (event) => {
                 const target = event.target instanceof Element ? event.target : event.target?.parentElement;
