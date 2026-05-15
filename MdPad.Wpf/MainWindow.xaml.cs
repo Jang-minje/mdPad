@@ -52,6 +52,8 @@ public partial class MainWindow : Window
     private ScrollViewer? _tabsScrollViewer;
     private SearchHighlightAdorner? _editorSearchAdorner;
     private string _lastRenderedHtml = string.Empty;
+    private Guid? _pendingPreviewScrollTabId;
+    private PreviewScrollState? _pendingPreviewScroll;
 
     public MainWindow()
     {
@@ -637,13 +639,14 @@ public partial class MainWindow : Window
         _previewDebounceTimer.Start();
     }
 
-    private void RefreshPreview()
+    private async void RefreshPreview()
     {
         if (!_isPreviewReady || CurrentTab is null)
         {
             return;
         }
 
+        var currentTabId = CurrentTab.Id;
         var cacheChanged = false;
         if (!_previewCache.TryGetValue(CurrentTab.Id, out var cache) ||
             cache.Markdown != CurrentTab.Markdown ||
@@ -659,6 +662,23 @@ public partial class MainWindow : Window
         }
 
         if (_renderedPreviewTabId == CurrentTab.Id && !cacheChanged)
+        {
+            return;
+        }
+
+        var shouldRestoreScroll = _renderedPreviewTabId == currentTabId && cacheChanged;
+        if (shouldRestoreScroll)
+        {
+            _pendingPreviewScroll = await CapturePreviewScrollAsync();
+            _pendingPreviewScrollTabId = _pendingPreviewScroll is null ? null : currentTabId;
+        }
+        else
+        {
+            _pendingPreviewScroll = null;
+            _pendingPreviewScrollTabId = null;
+        }
+
+        if (CurrentTab?.Id != currentTabId)
         {
             return;
         }
@@ -680,6 +700,97 @@ public partial class MainWindow : Window
         {
             await HighlightPreviewSearchAsync(SearchTextBox.Text);
         }
+
+        if (CurrentTab is not null &&
+            _pendingPreviewScrollTabId == CurrentTab.Id &&
+            _pendingPreviewScroll is { } scroll)
+        {
+            await RestorePreviewScrollAsync(scroll);
+        }
+
+        _pendingPreviewScroll = null;
+        _pendingPreviewScrollTabId = null;
+    }
+
+    private async Task<PreviewScrollState?> CapturePreviewScrollAsync()
+    {
+        if (PreviewWebView.CoreWebView2 is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var result = await PreviewWebView.CoreWebView2.ExecuteScriptAsync("""
+                (() => {
+                  const root = document.scrollingElement || document.documentElement || document.body;
+                  const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
+                  const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
+                  return {
+                    top: root.scrollTop || window.scrollY || 0,
+                    left: root.scrollLeft || window.scrollX || 0,
+                    maxTop,
+                    maxLeft,
+                    ratioTop: maxTop > 0 ? (root.scrollTop || window.scrollY || 0) / maxTop : 0,
+                    ratioLeft: maxLeft > 0 ? (root.scrollLeft || window.scrollX || 0) / maxLeft : 0
+                  };
+                })();
+                """);
+
+            using var doc = JsonDocument.Parse(result);
+            var root = doc.RootElement;
+            return new PreviewScrollState(
+                GetJsonDouble(root, "top"),
+                GetJsonDouble(root, "left"),
+                GetJsonDouble(root, "maxTop"),
+                GetJsonDouble(root, "maxLeft"),
+                GetJsonDouble(root, "ratioTop"),
+                GetJsonDouble(root, "ratioLeft"));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task RestorePreviewScrollAsync(PreviewScrollState scroll)
+    {
+        if (PreviewWebView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Serialize(scroll);
+            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($$"""
+                (() => {
+                  const saved = {{payload}};
+                  const apply = () => {
+                    const root = document.scrollingElement || document.documentElement || document.body;
+                    const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
+                    const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
+                    const top = saved.Top <= maxTop ? saved.Top : Math.max(0, Math.min(maxTop, saved.RatioTop * maxTop));
+                    const left = saved.Left <= maxLeft ? saved.Left : Math.max(0, Math.min(maxLeft, saved.RatioLeft * maxLeft));
+                    root.scrollTo({ top, left, behavior: 'auto' });
+                  };
+                  requestAnimationFrame(() => {
+                    apply();
+                    setTimeout(apply, 80);
+                  });
+                })();
+                """);
+        }
+        catch
+        {
+        }
+    }
+
+    private static double GetJsonDouble(JsonElement root, string propertyName)
+    {
+        return root.TryGetProperty(propertyName, out var value) && value.TryGetDouble(out var number)
+            ? number
+            : 0;
     }
 
     private void PreviewWebView_OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -2920,7 +3031,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.005";
+            return "2026.05.15.006";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
@@ -3136,6 +3247,8 @@ public partial class MainWindow : Window
     }
 
     private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
+
+    private sealed record PreviewScrollState(double Top, double Left, double MaxTop, double MaxLeft, double RatioTop, double RatioLeft);
 
     private sealed record FontFamilyOption(string DisplayName, string Source);
 
