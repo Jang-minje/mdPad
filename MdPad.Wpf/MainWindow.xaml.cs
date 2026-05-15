@@ -108,17 +108,17 @@ public partial class MainWindow : Window
         ApplyProtocolRegistration();
         UpdateStartupMenu();
         var commandLineArguments = Environment.GetCommandLineArgs().Skip(1).ToArray();
-        var protocolArguments = GetProtocolArguments(commandLineArguments).ToList();
-        if (Tabs.Count == 0 && protocolArguments.Count == 0)
+        var openArguments = GetOpenArguments(commandLineArguments).ToList();
+        if (Tabs.Count == 0 && openArguments.Count == 0)
         {
             AddNewTab();
         }
 
         ApplyMode(_mode);
-        await ProcessProtocolArgumentsAsync(commandLineArguments);
+        await ProcessOpenArgumentsAsync(commandLineArguments);
         foreach (var pendingArguments in pendingExternalArguments)
         {
-            await ProcessProtocolArgumentsAsync(pendingArguments);
+            await ProcessOpenArgumentsAsync(pendingArguments);
         }
 
         if (Environment.GetCommandLineArgs().Any(arg => arg.Equals("--tray", StringComparison.OrdinalIgnoreCase)))
@@ -130,7 +130,7 @@ public partial class MainWindow : Window
     private async void App_OnExternalArgumentsReceived(string[] args)
     {
         ShowFromTray();
-        await ProcessProtocolArgumentsAsync(args);
+        await ProcessOpenArgumentsAsync(args);
     }
 
     private void AddNewTab(string title = "Untitled", string markdown = "")
@@ -2803,16 +2803,71 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ProcessProtocolArgumentsAsync(IEnumerable<string> args)
+    private async Task ProcessOpenArgumentsAsync(IEnumerable<string> args)
     {
-        foreach (var protocolArgument in GetProtocolArguments(args))
+        foreach (var argument in GetOpenArguments(args))
         {
-            await OpenProtocolArgumentAsync(protocolArgument);
+            if (IsProtocolArgument(argument))
+            {
+                await OpenProtocolArgumentAsync(argument);
+                continue;
+            }
+
+            OpenFileArgument(argument);
         }
     }
 
-    private static IEnumerable<string> GetProtocolArguments(IEnumerable<string> args) =>
-        args.Where(arg => arg.StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase));
+    private void OpenFileArgument(string rawArgument)
+    {
+        try
+        {
+            var path = rawArgument.Trim().Trim('"');
+            if (path.StartsWith("file://", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(path, UriKind.Absolute, out var fileUri))
+            {
+                path = fileUri.LocalPath;
+            }
+
+            if (!File.Exists(path))
+            {
+                StatusTextBlock.Text = $"파일을 찾을 수 없습니다: {path}";
+                return;
+            }
+
+            OpenFileInTab(path);
+            StatusTextBlock.Text = $"파일을 열었습니다: {path}";
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"파일 열기 실패: {exception.Message}";
+        }
+    }
+
+    private static IEnumerable<string> GetOpenArguments(IEnumerable<string> args) =>
+        args.Where(arg =>
+            IsProtocolArgument(arg) ||
+            IsOpenableFileArgument(arg));
+
+    private static bool IsProtocolArgument(string arg) =>
+        arg.Trim().Trim('"').StartsWith("mdpad:", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsOpenableFileArgument(string arg)
+    {
+        var value = arg.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.StartsWith("--", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (value.StartsWith("file://", StringComparison.OrdinalIgnoreCase) &&
+            Uri.TryCreate(value, UriKind.Absolute, out var fileUri))
+        {
+            value = fileUri.LocalPath;
+        }
+
+        return File.Exists(value);
+    }
 
     private static ProtocolCommand? ParseProtocolArgument(string rawArgument)
     {
@@ -3383,7 +3438,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.022";
+            return "2026.05.15.023";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

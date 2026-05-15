@@ -2,7 +2,7 @@ Unicode true
 !define APP_NAME "MD Pad WV2"
 !define APP_EXE "MdPad.Wpf.exe"
 !define INSTALL_DIR "$LOCALAPPDATA\Programs\MdPadWv2"
-!define APP_VERSION "2026.05.15.022"
+!define APP_VERSION "2026.05.15.023"
 
 Name "${APP_NAME}"
 OutFile "release\MdPadWv2-Setup-${APP_VERSION}.exe"
@@ -29,6 +29,11 @@ Section "Install"
   WriteRegStr HKCU "Software\Classes\mdpad" "" "URL:MD Pad Protocol"
   WriteRegStr HKCU "Software\Classes\mdpad" "URL Protocol" ""
   WriteRegStr HKCU "Software\Classes\mdpad\shell\open\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
+  WriteRegStr HKCU "Software\Classes\.md" "" "MdPadWv2.Markdown"
+  WriteRegStr HKCU "Software\Classes\.markdown" "" "MdPadWv2.Markdown"
+  WriteRegStr HKCU "Software\Classes\MdPadWv2.Markdown" "" "Markdown Document"
+  WriteRegStr HKCU "Software\Classes\MdPadWv2.Markdown\DefaultIcon" "" "$INSTDIR\${APP_EXE},0"
+  WriteRegStr HKCU "Software\Classes\MdPadWv2.Markdown\shell\open\command" "" '"$INSTDIR\${APP_EXE}" "%1"'
   Exec "$INSTDIR\${APP_EXE}"
 SectionEnd
 
@@ -38,6 +43,7 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\${APP_NAME}"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "MdPadWv2"
   DeleteRegKey HKCU "Software\Classes\mdpad"
+  DeleteRegKey HKCU "Software\Classes\MdPadWv2.Markdown"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
   RMDir /r "$INSTDIR"
 SectionEnd
