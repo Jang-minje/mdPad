@@ -2099,12 +2099,12 @@ public partial class MainWindow : Window
 
         converted = Regex.Replace(
             converted,
-            "(<img\\b[^>]*?\\bsrc\\s*=\\s*[\"'])(?<src>[^\"']+)([\"'][^>]*>)",
+            "(?<prefix><img\\b[^>]*?\\bsrc\\s*=\\s*[\"'])(?<src>[^\"']+)(?<suffix>[\"'][^>]*>)",
             match =>
             {
                 var source = match.Groups["src"].Value.Trim();
                 return TryConvertLocalImageSource(source, out var previewUrl)
-                    ? $"{match.Groups[1].Value}{previewUrl}{match.Groups[3].Value}"
+                    ? $"{match.Groups["prefix"].Value}{previewUrl}{match.Groups["suffix"].Value}"
                     : match.Value;
             },
             RegexOptions.IgnoreCase);
@@ -2920,7 +2920,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.004";
+            return "2026.05.15.005";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
