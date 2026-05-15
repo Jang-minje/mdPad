@@ -443,6 +443,29 @@ public partial class MainWindow : Window
         _tabSwitcherIndex = -1;
     }
 
+    private void CommitTabSwitcher(DocumentTab tab)
+    {
+        var index = Tabs.IndexOf(tab);
+        if (index < 0)
+        {
+            return;
+        }
+
+        _tabSwitcherIndex = index;
+        CommitTabSwitcher();
+    }
+
+    private void TabSwitcherListBox_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: DocumentTab tab })
+        {
+            return;
+        }
+
+        CommitTabSwitcher(tab);
+        e.Handled = true;
+    }
+
     private void CancelTabSwitcher()
     {
         if (!_isTabSwitcherOpen)
@@ -3360,7 +3383,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.021";
+            return "2026.05.15.022";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

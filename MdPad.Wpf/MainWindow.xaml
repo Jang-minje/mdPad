@@ -529,6 +529,7 @@
                          Background="#1E1E1E"
                          BorderThickness="0"
                          Foreground="#F3F4F6"
+                         PreviewMouseLeftButtonUp="TabSwitcherListBox_OnPreviewMouseLeftButtonUp"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
