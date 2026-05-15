@@ -14,7 +14,7 @@ if not exist "C:\Program Files (x86)\NSIS\makensis.exe" (
   exit /b 1
 )
 
-set APP_VERSION=2026.05.15.016
+set APP_VERSION=2026.05.15.017
 taskkill /IM MdPad.Wpf.exe /F >nul 2>nul
 
 dotnet build MdPadWv2.sln -c Release

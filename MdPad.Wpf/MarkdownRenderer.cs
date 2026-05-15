@@ -524,14 +524,6 @@ public sealed class MarkdownRenderer
                 const raw = (query || '').toString().trim();
                 const terms = new Set();
                 if (raw) terms.add(raw.toLowerCase());
-                const normalized = raw
-                  .replace(/^[-*+]\s+/, '')
-                  .replace(/^\d+[.)]\s+/, '')
-                  .replace(/^>\s+/, '')
-                  .replace(/^#{1,6}\s+/, '')
-                  .replace(/^[-*+]\s+\[[ xX]\]\s+/, '')
-                  .trim();
-                if (normalized) terms.add(normalized.toLowerCase());
                 return Array.from(terms);
               };
               const collectSearchHits = () => {

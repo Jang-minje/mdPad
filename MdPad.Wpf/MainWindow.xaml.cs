@@ -48,6 +48,7 @@ public partial class MainWindow : Window
     private StyleShortcutSettings _styleShortcuts = new();
     private List<FontFamilyOption> _fontFamilyOptions = [];
     private int _lastSearchIndex = -1;
+    private int _lastSearchLength;
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
     private SearchHighlightAdorner? _editorSearchAdorner;
@@ -1726,6 +1727,7 @@ public partial class MainWindow : Window
     {
         SearchTextBox.Clear();
         _lastSearchIndex = -1;
+        _lastSearchLength = 0;
         UpdateSearchStatus();
         UpdateEditorSearchHighlight();
         SearchTextBox.Focus();
@@ -1831,8 +1833,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        var index = FindEditorMatchIndex(text, query, forward);
-        if (index < 0)
+        var match = FindEditorMatch(text, query, forward);
+        if (match is null)
         {
             if (shouldFindPreview)
             {
@@ -1843,10 +1845,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        _lastSearchIndex = index;
+        _lastSearchIndex = match.Value.Index;
+        _lastSearchLength = match.Value.Length;
         EditorTextBox.Focus();
-        EditorTextBox.Select(index, query.Length);
-        EditorTextBox.ScrollToLine(EditorTextBox.GetLineIndexFromCharacterIndex(index));
+        EditorTextBox.Select(match.Value.Index, match.Value.Length);
+        EditorTextBox.ScrollToLine(EditorTextBox.GetLineIndexFromCharacterIndex(match.Value.Index));
         UpdateEditorSearchHighlight();
         if (shouldFindPreview)
         {
@@ -1876,27 +1879,35 @@ public partial class MainWindow : Window
         await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadFindNext?.({queryJson}, {(forward ? "true" : "false")});");
     }
 
-    private int FindEditorMatchIndex(string text, string query, bool forward)
+    private SearchMatch? FindEditorMatch(string text, string query, bool forward)
     {
         var comparison = StringComparison.OrdinalIgnoreCase;
+        var terms = GetSearchTerms(query);
+        if (terms.Count == 0)
+        {
+            return null;
+        }
+
         var selectedMatch =
-            EditorTextBox.SelectionLength == query.Length &&
-            string.Equals(EditorTextBox.SelectedText, query, comparison);
+            terms.Any(term =>
+                EditorTextBox.SelectionLength == term.Length &&
+                string.Equals(EditorTextBox.SelectedText, term, comparison));
 
         if (forward)
         {
             var start = selectedMatch
-                ? EditorTextBox.SelectionStart + query.Length
+                ? EditorTextBox.SelectionStart + EditorTextBox.SelectionLength
                 : _lastSearchIndex >= 0
-                    ? _lastSearchIndex + query.Length
+                    ? _lastSearchIndex + Math.Max(1, _lastSearchLength)
                     : EditorTextBox.SelectionStart;
-            var forwardIndex = text.IndexOf(query, Math.Clamp(start, 0, text.Length), comparison);
-            if (forwardIndex < 0)
+
+            var forwardMatch = FindFirstMatchAtOrAfter(text, terms, Math.Clamp(start, 0, text.Length), comparison);
+            if (forwardMatch is null)
             {
-                forwardIndex = text.IndexOf(query, 0, comparison);
+                forwardMatch = FindFirstMatchAtOrAfter(text, terms, 0, comparison);
             }
 
-            return forwardIndex;
+            return forwardMatch;
         }
 
         var backwardStart = selectedMatch
@@ -1910,13 +1921,70 @@ public partial class MainWindow : Window
             backwardStart = text.Length - 1;
         }
 
-        var backwardIndex = text.LastIndexOf(query, Math.Clamp(backwardStart, 0, Math.Max(0, text.Length - 1)), comparison);
-        if (backwardIndex < 0)
+        var backwardMatch = FindLastMatchAtOrBefore(text, terms, Math.Clamp(backwardStart, 0, Math.Max(0, text.Length - 1)), comparison);
+        if (backwardMatch is null)
         {
-            backwardIndex = text.LastIndexOf(query, comparison);
+            backwardMatch = FindLastMatchAtOrBefore(text, terms, text.Length - 1, comparison);
         }
 
-        return backwardIndex;
+        return backwardMatch;
+    }
+
+    private static SearchMatch? FindFirstMatchAtOrAfter(string text, IReadOnlyList<string> terms, int start, StringComparison comparison)
+    {
+        SearchMatch? best = null;
+        foreach (var term in terms)
+        {
+            var index = text.IndexOf(term, start, comparison);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            if (best is null || index < best.Value.Index || (index == best.Value.Index && term.Length > best.Value.Length))
+            {
+                best = new SearchMatch(index, term.Length);
+            }
+        }
+
+        return best;
+    }
+
+    private static SearchMatch? FindLastMatchAtOrBefore(string text, IReadOnlyList<string> terms, int start, StringComparison comparison)
+    {
+        SearchMatch? best = null;
+        foreach (var term in terms)
+        {
+            var index = text.LastIndexOf(term, start, comparison);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            if (best is null || index > best.Value.Index || (index == best.Value.Index && term.Length > best.Value.Length))
+            {
+                best = new SearchMatch(index, term.Length);
+            }
+        }
+
+        return best;
+    }
+
+    private static List<string> GetSearchTerms(string query)
+    {
+        var raw = (query ?? string.Empty).Trim();
+        var terms = new List<string>();
+        AddSearchTerm(terms, raw);
+        return terms;
+    }
+
+    private static void AddSearchTerm(List<string> terms, string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value) &&
+            !terms.Any(item => string.Equals(item, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            terms.Add(value);
+        }
     }
 
     private void ReplaceOne()
@@ -2032,7 +2100,7 @@ public partial class MainWindow : Window
     {
         EnsureEditorSearchAdorner();
         _editorSearchAdorner?.Update(
-            SearchBar.Visibility == Visibility.Visible ? SearchTextBox.Text : string.Empty,
+            SearchBar.Visibility == Visibility.Visible ? GetSearchTerms(SearchTextBox.Text) : [],
             _lastSearchIndex,
             _theme == ThemeMode.Dark);
     }
@@ -2066,15 +2134,43 @@ public partial class MainWindow : Window
             return;
         }
 
-        var count = 0;
-        var index = 0;
-        while ((index = EditorTextBox.Text.IndexOf(query, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+        var terms = GetSearchTerms(query);
+        if (terms.Count == 0)
         {
-            count += 1;
-            index += Math.Max(1, query.Length);
+            SearchStatusTextBlock.Text = string.Empty;
+            return;
         }
 
+        var count = CountSearchMatches(EditorTextBox.Text, terms);
         SearchStatusTextBlock.Text = $"{count}개";
+    }
+
+    private static int CountSearchMatches(string text, IReadOnlyList<string> terms)
+    {
+        var matches = new List<SearchMatch>();
+        foreach (var term in terms)
+        {
+            var index = 0;
+            while ((index = text.IndexOf(term, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                matches.Add(new SearchMatch(index, term.Length));
+                index += Math.Max(1, term.Length);
+            }
+        }
+
+        return matches
+            .OrderBy(match => match.Index)
+            .ThenByDescending(match => match.Length)
+            .Aggregate(new List<SearchMatch>(), (filtered, match) =>
+            {
+                if (filtered.Count == 0 || match.Index >= filtered[^1].Index + filtered[^1].Length)
+                {
+                    filtered.Add(match);
+                }
+
+                return filtered;
+            })
+            .Count;
     }
 
     private void Window_OnDragOver(object sender, System.Windows.DragEventArgs e)
@@ -3017,7 +3113,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.016";
+            return "2026.05.15.017";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
@@ -3234,6 +3330,8 @@ public partial class MainWindow : Window
 
     private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string PayloadJson, string Html);
 
+    private readonly record struct SearchMatch(int Index, int Length);
+
     private sealed record FontFamilyOption(string DisplayName, string Source);
 
     private readonly record struct ProtocolCommand(string Kind, string Value);
@@ -3242,7 +3340,7 @@ public partial class MainWindow : Window
 public sealed class SearchHighlightAdorner : Adorner
 {
     private readonly System.Windows.Controls.TextBox _textBox;
-    private string _query = string.Empty;
+    private IReadOnlyList<string> _queries = [];
     private int _currentIndex = -1;
     private bool _dark;
 
@@ -3251,9 +3349,9 @@ public sealed class SearchHighlightAdorner : Adorner
         _textBox = textBox;
     }
 
-    public void Update(string query, int currentIndex, bool dark)
+    public void Update(IReadOnlyList<string> queries, int currentIndex, bool dark)
     {
-        _query = query ?? string.Empty;
+        _queries = queries ?? [];
         _currentIndex = currentIndex;
         _dark = dark;
         InvalidateVisual();
@@ -3262,7 +3360,7 @@ public sealed class SearchHighlightAdorner : Adorner
     protected override void OnRender(System.Windows.Media.DrawingContext drawingContext)
     {
         base.OnRender(drawingContext);
-        if (string.IsNullOrEmpty(_query) || string.IsNullOrEmpty(_textBox.Text))
+        if (_queries.Count == 0 || string.IsNullOrEmpty(_textBox.Text))
         {
             return;
         }
@@ -3277,13 +3375,41 @@ public sealed class SearchHighlightAdorner : Adorner
         currentBrush.Freeze();
 
         var text = _textBox.Text;
-        var index = 0;
         var guard = 0;
-        while ((index = text.IndexOf(_query, index, StringComparison.OrdinalIgnoreCase)) >= 0 && guard++ < 2000)
+        foreach (var match in GetMatches(text, _queries))
         {
-            DrawMatch(drawingContext, index, _query.Length, index == _currentIndex ? currentBrush : matchBrush);
-            index += Math.Max(1, _query.Length);
+            if (guard++ >= 2000)
+            {
+                break;
+            }
+
+            DrawMatch(drawingContext, match.Index, match.Length, match.Index == _currentIndex ? currentBrush : matchBrush);
         }
+    }
+
+    private static List<(int Index, int Length)> GetMatches(string text, IReadOnlyList<string> queries)
+    {
+        var matches = new List<(int Index, int Length)>();
+        foreach (var query in queries)
+        {
+            var index = 0;
+            while ((index = text.IndexOf(query, index, StringComparison.OrdinalIgnoreCase)) >= 0)
+            {
+                matches.Add((index, query.Length));
+                index += Math.Max(1, query.Length);
+            }
+        }
+
+        var filtered = new List<(int Index, int Length)>();
+        foreach (var match in matches.OrderBy(match => match.Index).ThenByDescending(match => match.Length))
+        {
+            if (filtered.Count == 0 || match.Index >= filtered[^1].Index + filtered[^1].Length)
+            {
+                filtered.Add(match);
+            }
+        }
+
+        return filtered;
     }
 
     private void DrawMatch(System.Windows.Media.DrawingContext drawingContext, int start, int length, System.Windows.Media.Brush brush)
