@@ -2,7 +2,7 @@ Unicode true
 !define APP_NAME "MD Pad WV2"
 !define APP_EXE "MdPad.Wpf.exe"
 !define INSTALL_DIR "$LOCALAPPDATA\Programs\MdPadWv2"
-!define APP_VERSION "2026.05.15.019"
+!define APP_VERSION "2026.05.15.020"
 
 Name "${APP_NAME}"
 OutFile "release\MdPadWv2-Setup-${APP_VERSION}.exe"
@@ -15,6 +15,8 @@ UninstPage uninstConfirm
 UninstPage instfiles
 
 Section "Install"
+  ExecWait 'taskkill /IM "${APP_EXE}" /F'
+  Sleep 500
   SetOutPath "$INSTDIR"
   File /r "release\app\*.*"
   CreateDirectory "$SMPROGRAMS\${APP_NAME}"

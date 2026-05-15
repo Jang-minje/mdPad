@@ -48,6 +48,7 @@ public sealed class SessionState
     public bool LaunchOnLogin { get; set; } = true;
     public EditorStyleSettings DefaultStyle { get; set; } = new();
     public StyleShortcutSettings StyleShortcuts { get; set; } = new();
+    public AppShortcutSettings AppShortcuts { get; set; } = new();
     public List<SessionDocument> Documents { get; set; } = [];
 }
 
@@ -77,4 +78,12 @@ public sealed class StyleShortcutSettings
     public string Image { get; set; } = "Ctrl+Alt+I";
     public string Link { get; set; } = "Ctrl+Alt+L";
     public string Divider { get; set; } = "Ctrl+Alt+D";
+}
+
+public sealed class AppShortcutSettings
+{
+    public string NewTab { get; set; } = "Ctrl+T";
+    public string NextTab { get; set; } = "Ctrl+Tab";
+    public string PreviousTab { get; set; } = "Ctrl+Shift+Tab";
+    public string CloseTab { get; set; } = "Ctrl+W";
 }

@@ -46,6 +46,7 @@ public partial class MainWindow : Window
     private ThemeMode _theme = ThemeMode.Default;
     private EditorStyleSettings _defaultStyle = new();
     private StyleShortcutSettings _styleShortcuts = new();
+    private AppShortcutSettings _appShortcuts = new();
     private List<FontFamilyOption> _fontFamilyOptions = [];
     private int _lastSearchIndex = -1;
     private int _lastSearchLength;
@@ -96,6 +97,7 @@ public partial class MainWindow : Window
         InitializeStyleControls();
         RestoreSession();
         UpdateStyleShortcutMenuText();
+        UpdateAppShortcutMenuText();
         EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, _) => _editorSearchAdorner?.InvalidateVisual()), true);
         EditorTextBox.SizeChanged += (_, _) => _editorSearchAdorner?.InvalidateVisual();
         ApplyTheme();
@@ -377,6 +379,28 @@ public partial class MainWindow : Window
         {
             CloseTab(CurrentTab);
         }
+    }
+
+    private void SelectNextTab() => SelectTabByOffset(1);
+
+    private void SelectPreviousTab() => SelectTabByOffset(-1);
+
+    private void SelectTabByOffset(int offset)
+    {
+        if (Tabs.Count <= 1)
+        {
+            return;
+        }
+
+        var currentIndex = TabsListBox.SelectedIndex;
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        var nextIndex = (currentIndex + offset + Tabs.Count) % Tabs.Count;
+        TabsListBox.SelectedIndex = nextIndex;
+        TabsListBox.ScrollIntoView(Tabs[nextIndex]);
     }
 
     private void TabCloseButton_OnClick(object sender, RoutedEventArgs e)
@@ -792,6 +816,11 @@ public partial class MainWindow : Window
 
     private void MainWindow_OnPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (TryHandleAppShortcut(e))
+        {
+            return;
+        }
+
         if (TryHandleStyleShortcut(e))
         {
             return;
@@ -1151,6 +1180,44 @@ public partial class MainWindow : Window
         };
     }
 
+    private bool TryHandleAppShortcut(System.Windows.Input.KeyEventArgs e)
+    {
+        if (Keyboard.Modifiers == ModifierKeys.None)
+        {
+            return false;
+        }
+
+        if (IsShortcutMatch(_appShortcuts.NewTab, e))
+        {
+            AddNewTab();
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_appShortcuts.NextTab, e))
+        {
+            SelectNextTab();
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_appShortcuts.PreviousTab, e))
+        {
+            SelectPreviousTab();
+            e.Handled = true;
+            return true;
+        }
+
+        if (IsShortcutMatch(_appShortcuts.CloseTab, e))
+        {
+            CloseTabButton_OnClick(this, e);
+            e.Handled = true;
+            return true;
+        }
+
+        return false;
+    }
+
     private bool TryHandleStyleShortcut(System.Windows.Input.KeyEventArgs e)
     {
         if (Keyboard.Modifiers == ModifierKeys.None)
@@ -1218,6 +1285,45 @@ public partial class MainWindow : Window
     {
         key = Key.None;
         modifiers = ModifierKeys.None;
+
+        if (string.IsNullOrWhiteSpace(gestureText))
+        {
+            return false;
+        }
+
+        var parts = gestureText.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length > 0)
+        {
+            foreach (var part in parts[..^1])
+            {
+                if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) ||
+                    part.Equals("Control", StringComparison.OrdinalIgnoreCase))
+                {
+                    modifiers |= ModifierKeys.Control;
+                }
+                else if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase))
+                {
+                    modifiers |= ModifierKeys.Alt;
+                }
+                else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase))
+                {
+                    modifiers |= ModifierKeys.Shift;
+                }
+                else if (part.Equals("Win", StringComparison.OrdinalIgnoreCase) ||
+                         part.Equals("Windows", StringComparison.OrdinalIgnoreCase))
+                {
+                    modifiers |= ModifierKeys.Windows;
+                }
+            }
+
+            if (Enum.TryParse(parts[^1], ignoreCase: true, out Key parsedKey) &&
+                parsedKey != Key.None &&
+                modifiers != ModifierKeys.None)
+            {
+                key = parsedKey;
+                return true;
+            }
+        }
 
         try
         {
@@ -1538,6 +1644,28 @@ public partial class MainWindow : Window
     private void DividerShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
         ConfigureStyleShortcut("구분선 삽입", _styleShortcuts.Divider, value => _styleShortcuts.Divider = value);
 
+    private void NewTabShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureShortcut("새 탭", _appShortcuts.NewTab, value => _appShortcuts.NewTab = value, UpdateAppShortcutMenuText);
+
+    private void NextTabShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureShortcut("다음 탭", _appShortcuts.NextTab, value => _appShortcuts.NextTab = value, UpdateAppShortcutMenuText);
+
+    private void PreviousTabShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureShortcut("이전 탭", _appShortcuts.PreviousTab, value => _appShortcuts.PreviousTab = value, UpdateAppShortcutMenuText);
+
+    private void CloseTabShortcutMenuItem_OnClick(object sender, RoutedEventArgs e) =>
+        ConfigureShortcut("탭 닫기", _appShortcuts.CloseTab, value => _appShortcuts.CloseTab = value, UpdateAppShortcutMenuText);
+
+    private void ResetShortcutsMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        _styleShortcuts = new StyleShortcutSettings();
+        _appShortcuts = new AppShortcutSettings();
+        UpdateStyleShortcutMenuText();
+        UpdateAppShortcutMenuText();
+        QueueSessionSave();
+        StatusTextBlock.Text = "단축키를 기본값으로 초기화했습니다.";
+    }
+
     private void VersionInfoMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         var version = GetAppVersion();
@@ -1583,7 +1711,10 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
-    private void ConfigureStyleShortcut(string label, string currentValue, Action<string> apply)
+    private void ConfigureStyleShortcut(string label, string currentValue, Action<string> apply) =>
+        ConfigureShortcut(label, currentValue, apply, UpdateStyleShortcutMenuText);
+
+    private void ConfigureShortcut(string label, string currentValue, Action<string> apply, Action refreshMenuText)
     {
         var input = new System.Windows.Controls.TextBox
         {
@@ -1640,7 +1771,7 @@ public partial class MainWindow : Window
 
         var dialog = new Window
         {
-            Title = "스타일 단축키",
+            Title = "단축키 설정",
             Owner = this,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             ResizeMode = ResizeMode.NoResize,
@@ -1658,7 +1789,7 @@ public partial class MainWindow : Window
             }
 
             apply(value);
-            UpdateStyleShortcutMenuText();
+            refreshMenuText();
             QueueSessionSave();
             dialog.DialogResult = true;
         };
@@ -2724,6 +2855,7 @@ public partial class MainWindow : Window
         _launchOnLogin = session.LaunchOnLogin;
         _defaultStyle = session.DefaultStyle ?? new EditorStyleSettings();
         _styleShortcuts = NormalizeShortcuts(session.StyleShortcuts);
+        _appShortcuts = NormalizeShortcuts(session.AppShortcuts);
         _defaultStyle.FontSize = Math.Clamp(_defaultStyle.FontSize, 8, 36);
         if (string.IsNullOrWhiteSpace(_defaultStyle.FontFamily))
         {
@@ -2755,6 +2887,7 @@ public partial class MainWindow : Window
         TabsListBox.SelectedItem = Tabs.FirstOrDefault(tab => tab.Id.ToString("N") == session.SelectedTabId) ?? Tabs[0];
         UpdateStyleControlsFromCurrentTab();
         UpdateStyleShortcutMenuText();
+        UpdateAppShortcutMenuText();
     }
 
     private void QueueSessionSave()
@@ -2782,6 +2915,23 @@ public partial class MainWindow : Window
         };
     }
 
+    private static AppShortcutSettings NormalizeShortcuts(AppShortcutSettings? shortcuts)
+    {
+        var defaults = new AppShortcutSettings();
+        if (shortcuts is null)
+        {
+            return defaults;
+        }
+
+        return new AppShortcutSettings
+        {
+            NewTab = IsValidShortcut(shortcuts.NewTab) ? shortcuts.NewTab : defaults.NewTab,
+            NextTab = IsValidShortcut(shortcuts.NextTab) ? shortcuts.NextTab : defaults.NextTab,
+            PreviousTab = IsValidShortcut(shortcuts.PreviousTab) ? shortcuts.PreviousTab : defaults.PreviousTab,
+            CloseTab = IsValidShortcut(shortcuts.CloseTab) ? shortcuts.CloseTab : defaults.CloseTab,
+        };
+    }
+
     private static bool IsValidShortcut(string value) => TryParseShortcut(value, out _, out _);
 
     private void UpdateStyleShortcutMenuText()
@@ -2801,6 +2951,17 @@ public partial class MainWindow : Window
         DividerShortcutMenuItem.Header = $"구분선 삽입... ({_styleShortcuts.Divider})";
     }
 
+    private void UpdateAppShortcutMenuText()
+    {
+        NewTabMenuItem.InputGestureText = _appShortcuts.NewTab;
+        CloseTabMenuItem.InputGestureText = _appShortcuts.CloseTab;
+
+        NewTabShortcutMenuItem.Header = $"새 탭... ({_appShortcuts.NewTab})";
+        NextTabShortcutMenuItem.Header = $"다음 탭... ({_appShortcuts.NextTab})";
+        PreviousTabShortcutMenuItem.Header = $"이전 탭... ({_appShortcuts.PreviousTab})";
+        CloseTabShortcutMenuItem.Header = $"탭 닫기... ({_appShortcuts.CloseTab})";
+    }
+
     private void SaveSession()
     {
         _sessionStateStore.Save(new SessionState
@@ -2811,6 +2972,7 @@ public partial class MainWindow : Window
             LaunchOnLogin = _launchOnLogin,
             DefaultStyle = _defaultStyle,
             StyleShortcuts = _styleShortcuts,
+            AppShortcuts = _appShortcuts,
             Documents = Tabs.Select(tab => new SessionDocument
             {
                 Id = tab.Id.ToString("N"),
@@ -3113,7 +3275,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.019";
+            return "2026.05.15.020";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

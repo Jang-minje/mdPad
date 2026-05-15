@@ -251,13 +251,13 @@
 
         <Menu x:Name="MainMenu" Grid.Row="0" Background="{StaticResource ChromeBrush}" Foreground="{DynamicResource MenuForegroundBrush}" FontSize="12" Padding="2,0" ItemContainerStyle="{StaticResource TopMenuItemStyle}">
             <MenuItem Header="파일(_F)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
-                <MenuItem Header="새 탭" InputGestureText="Ctrl+N" Click="NewButton_OnClick" />
+                <MenuItem x:Name="NewTabMenuItem" Header="새 탭" InputGestureText="Ctrl+T" Click="NewButton_OnClick" />
                 <MenuItem Header="열기..." InputGestureText="Ctrl+O" Click="OpenButton_OnClick" />
                 <Separator />
                 <MenuItem Header="저장" InputGestureText="Ctrl+S" Click="SaveButton_OnClick" />
                 <MenuItem Header="다른 이름으로 저장..." Click="SaveAsButton_OnClick" />
                 <Separator />
-                <MenuItem Header="탭 닫기" Click="CloseTabButton_OnClick" />
+                <MenuItem x:Name="CloseTabMenuItem" Header="탭 닫기" InputGestureText="Ctrl+W" Click="CloseTabButton_OnClick" />
             </MenuItem>
             <MenuItem Header="편집(_E)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem Header="찾기" InputGestureText="Ctrl+F" Click="ShowSearchMenuItem_OnClick" />
@@ -309,6 +309,13 @@
                     <MenuItem x:Name="LinkShortcutMenuItem" Header="링크 삽입..." Click="LinkShortcutMenuItem_OnClick" />
                     <MenuItem x:Name="DividerShortcutMenuItem" Header="구분선 삽입..." Click="DividerShortcutMenuItem_OnClick" />
                 </MenuItem>
+                <MenuItem Header="앱 단축키">
+                    <MenuItem x:Name="NewTabShortcutMenuItem" Header="새 탭..." Click="NewTabShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="NextTabShortcutMenuItem" Header="다음 탭..." Click="NextTabShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="PreviousTabShortcutMenuItem" Header="이전 탭..." Click="PreviousTabShortcutMenuItem_OnClick" />
+                    <MenuItem x:Name="CloseTabShortcutMenuItem" Header="탭 닫기..." Click="CloseTabShortcutMenuItem_OnClick" />
+                </MenuItem>
+                <MenuItem Header="단축키 기본값으로 초기화" Click="ResetShortcutsMenuItem_OnClick" />
                 <Separator />
                 <MenuItem Header="오픈소스 라이선스" Click="OpenSourceLicensesMenuItem_OnClick" />
                 <Separator />
