@@ -12,6 +12,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
@@ -46,6 +47,7 @@ public partial class MainWindow : Window
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
+    private SearchHighlightAdorner? _editorSearchAdorner;
     private string _lastRenderedHtml = string.Empty;
 
     public MainWindow()
@@ -89,6 +91,8 @@ public partial class MainWindow : Window
         InitializeStyleControls();
         RestoreSession();
         UpdateStyleShortcutMenuText();
+        EditorTextBox.AddHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler((_, _) => _editorSearchAdorner?.InvalidateVisual()), true);
+        EditorTextBox.SizeChanged += (_, _) => _editorSearchAdorner?.InvalidateVisual();
         ApplyTheme();
         ApplyStartupRegistration(_launchOnLogin);
         ApplyProtocolRegistration();
@@ -267,6 +271,8 @@ public partial class MainWindow : Window
         {
             _isUpdatingEditor = false;
         }
+
+        UpdateEditorSearchHighlight();
     }
 
     private void EditorTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
@@ -282,6 +288,7 @@ public partial class MainWindow : Window
         QueuePreviewRefresh();
         UpdateTitle();
         UpdateSearchStatus();
+        UpdateEditorSearchHighlight();
     }
 
     private void NewButton_OnClick(object sender, RoutedEventArgs e) => AddNewTab();
@@ -1097,6 +1104,7 @@ public partial class MainWindow : Window
         SearchTextBox.Focus();
         SearchTextBox.SelectAll();
         UpdateSearchStatus();
+        UpdateEditorSearchHighlight();
     }
 
     private void ShowSearchMenuItem_OnClick(object sender, RoutedEventArgs e) => ShowSearch();
@@ -1468,6 +1476,7 @@ public partial class MainWindow : Window
     private void HideSearch()
     {
         SearchBar.Visibility = Visibility.Collapsed;
+        UpdateEditorSearchHighlight();
         if (_mode is DocumentMode.Edit or DocumentMode.Split)
         {
             EditorTextBox.Focus();
@@ -1475,6 +1484,15 @@ public partial class MainWindow : Window
     }
 
     private void CloseSearchButton_OnClick(object sender, RoutedEventArgs e) => HideSearch();
+
+    private void ResetSearchButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        SearchTextBox.Clear();
+        _lastSearchIndex = -1;
+        UpdateSearchStatus();
+        UpdateEditorSearchHighlight();
+        SearchTextBox.Focus();
+    }
 
     private void ShowReplace()
     {
@@ -1522,6 +1540,7 @@ public partial class MainWindow : Window
     {
         _lastSearchIndex = -1;
         UpdateSearchStatus();
+        UpdateEditorSearchHighlight();
         if (_mode is DocumentMode.Preview or DocumentMode.Split)
         {
             _ = HighlightPreviewSearchAsync(SearchTextBox.Text);
@@ -1584,6 +1603,7 @@ public partial class MainWindow : Window
         EditorTextBox.Focus();
         EditorTextBox.Select(index, query.Length);
         EditorTextBox.ScrollToLine(EditorTextBox.GetLineIndexFromCharacterIndex(index));
+        UpdateEditorSearchHighlight();
         if (keepSearchFocus)
         {
             _ = Dispatcher.BeginInvoke(() =>
@@ -1746,6 +1766,35 @@ public partial class MainWindow : Window
 
         var queryJson = JsonSerializer.Serialize(query ?? string.Empty);
         await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadHighlightSearch?.({queryJson});");
+    }
+
+    private void UpdateEditorSearchHighlight()
+    {
+        EnsureEditorSearchAdorner();
+        _editorSearchAdorner?.Update(
+            SearchBar.Visibility == Visibility.Visible ? SearchTextBox.Text : string.Empty,
+            _lastSearchIndex,
+            _theme == ThemeMode.Dark);
+    }
+
+    private void EnsureEditorSearchAdorner()
+    {
+        if (_editorSearchAdorner is not null)
+        {
+            return;
+        }
+
+        var layer = AdornerLayer.GetAdornerLayer(EditorTextBox);
+        if (layer is null)
+        {
+            return;
+        }
+
+        _editorSearchAdorner = new SearchHighlightAdorner(EditorTextBox)
+        {
+            IsHitTestVisible = false,
+        };
+        layer.Add(_editorSearchAdorner);
     }
 
     private void UpdateSearchStatus()
@@ -2457,6 +2506,24 @@ public partial class MainWindow : Window
             : System.Drawing.Color.FromArgb(255, 250, 250, 250);
         StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
 
+        var searchBackground = Brush(dark ? "#202C3A" : "#FFF7D6");
+        var searchBorder = Brush(dark ? "#3B82F6" : "#E6C75A");
+        var searchForeground = Brush(dark ? "#E5E7EB" : "#8A6400");
+        SearchBar.Background = searchBackground;
+        SearchBar.BorderBrush = searchBorder;
+        SearchLabelTextBlock.Foreground = searchForeground;
+        SearchStatusTextBlock.Foreground = searchForeground;
+        foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(SearchBar))
+        {
+            button.Background = Brush(dark ? "#26384F" : "#FFFDF8");
+            button.BorderBrush = Brush(dark ? "#4B6385" : "#D8C9A9");
+            button.Foreground = Brush(dark ? "#F9FAFB" : "#172033");
+        }
+        SearchTextBox.Background = Brush(dark ? "#111827" : "#FFFFFF");
+        SearchTextBox.Foreground = Brush(dark ? "#F9FAFB" : "#111827");
+        SearchTextBox.BorderBrush = Brush(dark ? "#4B6385" : "#B8B8B8");
+        UpdateEditorSearchHighlight();
+
         foreach (var comboBox in FindVisualChildren<System.Windows.Controls.ComboBox>(ToolbarHost))
         {
             comboBox.Background = Brush(dark ? "#2B2B2B" : "#FFFFFF");
@@ -2697,4 +2764,76 @@ public partial class MainWindow : Window
     private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
 
     private readonly record struct ProtocolCommand(string Kind, string Value);
+}
+
+public sealed class SearchHighlightAdorner : Adorner
+{
+    private readonly System.Windows.Controls.TextBox _textBox;
+    private string _query = string.Empty;
+    private int _currentIndex = -1;
+    private bool _dark;
+
+    public SearchHighlightAdorner(System.Windows.Controls.TextBox textBox) : base(textBox)
+    {
+        _textBox = textBox;
+    }
+
+    public void Update(string query, int currentIndex, bool dark)
+    {
+        _query = query ?? string.Empty;
+        _currentIndex = currentIndex;
+        _dark = dark;
+        InvalidateVisual();
+    }
+
+    protected override void OnRender(System.Windows.Media.DrawingContext drawingContext)
+    {
+        base.OnRender(drawingContext);
+        if (string.IsNullOrEmpty(_query) || string.IsNullOrEmpty(_textBox.Text))
+        {
+            return;
+        }
+
+        var matchBrush = new System.Windows.Media.SolidColorBrush(_dark
+            ? System.Windows.Media.Color.FromArgb(94, 96, 165, 250)
+            : System.Windows.Media.Color.FromArgb(120, 255, 221, 87));
+        var currentBrush = new System.Windows.Media.SolidColorBrush(_dark
+            ? System.Windows.Media.Color.FromArgb(150, 245, 158, 11)
+            : System.Windows.Media.Color.FromArgb(160, 245, 158, 11));
+        matchBrush.Freeze();
+        currentBrush.Freeze();
+
+        var text = _textBox.Text;
+        var index = 0;
+        var guard = 0;
+        while ((index = text.IndexOf(_query, index, StringComparison.OrdinalIgnoreCase)) >= 0 && guard++ < 2000)
+        {
+            DrawMatch(drawingContext, index, _query.Length, index == _currentIndex ? currentBrush : matchBrush);
+            index += Math.Max(1, _query.Length);
+        }
+    }
+
+    private void DrawMatch(System.Windows.Media.DrawingContext drawingContext, int start, int length, System.Windows.Media.Brush brush)
+    {
+        if (start < 0 || start >= _textBox.Text.Length || length <= 0)
+        {
+            return;
+        }
+
+        var end = Math.Min(start + length - 1, _textBox.Text.Length - 1);
+        var startRect = _textBox.GetRectFromCharacterIndex(start, false);
+        var endRect = _textBox.GetRectFromCharacterIndex(end, true);
+        if (startRect.IsEmpty || endRect.IsEmpty ||
+            double.IsInfinity(startRect.X) || double.IsInfinity(endRect.X) ||
+            startRect.Bottom < 0 || startRect.Top > _textBox.ActualHeight)
+        {
+            return;
+        }
+
+        var x = Math.Max(0, startRect.X);
+        var y = Math.Max(0, startRect.Y);
+        var width = Math.Max(4, Math.Min(_textBox.ActualWidth, endRect.Right) - x);
+        var height = Math.Max(2, startRect.Height);
+        drawingContext.DrawRoundedRectangle(brush, null, new Rect(x, y, width, height), 2, 2);
+    }
 }

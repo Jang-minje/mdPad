@@ -183,6 +183,7 @@ public sealed class MarkdownRenderer
               padding: 8px 10px;
               border-bottom: 1px solid {{borderColor}};
               background: {{toolbarBackground}};
+              font-size: max(11px, calc(var(--pad-font-size) * .82));
             }
             .code-toolbar-left {
               display: flex;
@@ -205,7 +206,7 @@ public sealed class MarkdownRenderer
               text-overflow: ellipsis;
               white-space: nowrap;
               color: {{mutedColor}};
-              font-size: 12px;
+              font-size: inherit;
             }
             .code-chip {
               border: 1px solid {{borderColor}};
@@ -213,7 +214,7 @@ public sealed class MarkdownRenderer
               background: {{chipBackground}};
               color: {{chipText}};
               padding: 3px 9px;
-              font-size: 12px;
+              font-size: inherit;
               line-height: 1.2;
             }
             button.code-chip {
