@@ -1419,14 +1419,40 @@ public partial class MainWindow : Window
         var input = new System.Windows.Controls.TextBox
         {
             Text = currentValue,
+            IsReadOnly = true,
             Margin = new Thickness(0, 8, 0, 12),
             MinWidth = 260,
             Height = 28,
+            Cursor = System.Windows.Input.Cursors.Hand,
         };
+        input.PreviewKeyDown += (_, e) =>
+        {
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key == Key.Escape)
+            {
+                return;
+            }
+
+            e.Handled = true;
+            if (key is Key.Back or Key.Delete)
+            {
+                input.Clear();
+                return;
+            }
+
+            if (IsModifierOnlyKey(key))
+            {
+                return;
+            }
+
+            input.Text = FormatShortcutText(key, Keyboard.Modifiers);
+            input.CaretIndex = input.Text.Length;
+        };
+        input.GotKeyboardFocus += (_, _) => input.SelectAll();
 
         var description = new TextBlock
         {
-            Text = "예: Ctrl+Alt+T, Ctrl+Shift+T",
+            Text = "입력칸을 선택한 뒤 원하는 단축키를 누르세요. Backspace/Delete는 초기화입니다.",
             Foreground = WpfSolidColorBrushCache("#606060"),
             Margin = new Thickness(0, 0, 0, 8),
         };
@@ -1469,6 +1495,49 @@ public partial class MainWindow : Window
         };
 
         _ = dialog.ShowDialog();
+    }
+
+    private static bool IsModifierOnlyKey(Key key) =>
+        key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or
+            Key.LeftShift or Key.RightShift or Key.LWin or Key.RWin or
+            Key.System or Key.None;
+
+    private static string FormatShortcutText(Key key, ModifierKeys modifiers)
+    {
+        try
+        {
+            if (new KeyGestureConverter().ConvertToString(new KeyGesture(key, modifiers)) is { Length: > 0 } text)
+            {
+                return text.Replace("Control", "Ctrl", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch
+        {
+        }
+
+        var parts = new List<string>();
+        if (modifiers.HasFlag(ModifierKeys.Control))
+        {
+            parts.Add("Ctrl");
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            parts.Add("Alt");
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            parts.Add("Shift");
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Windows))
+        {
+            parts.Add("Windows");
+        }
+
+        parts.Add(key.ToString());
+        return string.Join("+", parts);
     }
 
     private static WpfSolidColorBrush WpfSolidColorBrushCache(string hex) => Brush(hex);
@@ -2485,8 +2554,8 @@ public partial class MainWindow : Window
         TabBarHost.Background = Brush(dark ? "#252526" : "#E5E5E5");
         TabBarHost.BorderBrush = Brush(dark ? "#3E3E42" : "#C8C8C8");
         StatusHost.Background = Brush(dark ? "#1E1E1E" : "#F3F3F3");
-        SearchBar.Background = Brush(dark ? "#2B2B2B" : "#FFF4C2");
-        ReplaceBar.Background = Brush(dark ? "#2B2B2B" : "#FFF4C2");
+        SearchBar.Background = Brush(dark ? "#111827" : "#F1F5F9");
+        ReplaceBar.Background = Brush(dark ? "#111827" : "#F1F5F9");
         SearchTextBox.Background = Brush(dark ? "#1E1E1E" : "#FFFFFF");
         SearchTextBox.Foreground = Brush(dark ? "#F0F0F0" : "#111827");
         ReplaceFindTextBox.Background = Brush(dark ? "#1E1E1E" : "#FFFFFF");
@@ -2506,22 +2575,44 @@ public partial class MainWindow : Window
             : System.Drawing.Color.FromArgb(255, 250, 250, 250);
         StatusTextBlock.Foreground = Brush(dark ? "#DCDCDC" : "#111827");
 
-        var searchBackground = Brush(dark ? "#202C3A" : "#FFF7D6");
-        var searchBorder = Brush(dark ? "#3B82F6" : "#E6C75A");
-        var searchForeground = Brush(dark ? "#E5E7EB" : "#8A6400");
+        var searchBackground = Brush(dark ? "#111827" : "#F1F5F9");
+        var searchBorder = Brush(dark ? "#374151" : "#CBD5E1");
+        var searchForeground = Brush(dark ? "#E5E7EB" : "#334155");
         SearchBar.Background = searchBackground;
         SearchBar.BorderBrush = searchBorder;
+        ReplaceBar.Background = searchBackground;
+        ReplaceBar.BorderBrush = searchBorder;
         SearchLabelTextBlock.Foreground = searchForeground;
         SearchStatusTextBlock.Foreground = searchForeground;
         foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(SearchBar))
         {
-            button.Background = Brush(dark ? "#26384F" : "#FFFDF8");
-            button.BorderBrush = Brush(dark ? "#4B6385" : "#D8C9A9");
+            button.Background = Brush(dark ? "#1F2937" : "#FFFFFF");
+            button.BorderBrush = Brush(dark ? "#4B5563" : "#CBD5E1");
             button.Foreground = Brush(dark ? "#F9FAFB" : "#172033");
+        }
+        foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(ReplaceBar))
+        {
+            button.Background = Brush(dark ? "#1F2937" : "#FFFFFF");
+            button.BorderBrush = Brush(dark ? "#4B5563" : "#CBD5E1");
+            button.Foreground = Brush(dark ? "#F9FAFB" : "#172033");
+        }
+        foreach (var textBlock in FindVisualChildren<TextBlock>(ReplaceBar))
+        {
+            textBlock.Foreground = searchForeground;
+        }
+        foreach (var radioButton in FindVisualChildren<System.Windows.Controls.RadioButton>(ReplaceBar))
+        {
+            radioButton.Foreground = searchForeground;
         }
         SearchTextBox.Background = Brush(dark ? "#111827" : "#FFFFFF");
         SearchTextBox.Foreground = Brush(dark ? "#F9FAFB" : "#111827");
-        SearchTextBox.BorderBrush = Brush(dark ? "#4B6385" : "#B8B8B8");
+        SearchTextBox.BorderBrush = Brush(dark ? "#4B5563" : "#CBD5E1");
+        ReplaceFindTextBox.Background = Brush(dark ? "#111827" : "#FFFFFF");
+        ReplaceFindTextBox.Foreground = Brush(dark ? "#F9FAFB" : "#111827");
+        ReplaceFindTextBox.BorderBrush = Brush(dark ? "#4B5563" : "#CBD5E1");
+        ReplaceTextBox.Background = Brush(dark ? "#111827" : "#FFFFFF");
+        ReplaceTextBox.Foreground = Brush(dark ? "#F9FAFB" : "#111827");
+        ReplaceTextBox.BorderBrush = Brush(dark ? "#4B5563" : "#CBD5E1");
         UpdateEditorSearchHighlight();
 
         foreach (var comboBox in FindVisualChildren<System.Windows.Controls.ComboBox>(ToolbarHost))
@@ -2546,7 +2637,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.001";
+            return "2026.05.15.002";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

@@ -344,9 +344,9 @@
             </DockPanel>
         </Border>
 
-        <Border x:Name="SearchBar" Grid.Row="2" Background="#FFF7D6" BorderBrush="#E6C75A" BorderThickness="0,0,0,1" Padding="10,7" Visibility="Collapsed">
+        <Border x:Name="SearchBar" Grid.Row="2" Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="0,0,0,1" Padding="10,7" Visibility="Collapsed">
             <DockPanel>
-                <TextBlock x:Name="SearchLabelTextBlock" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#8A6400" Text="검색" />
+                <TextBlock x:Name="SearchLabelTextBlock" DockPanel.Dock="Left" VerticalAlignment="Center" Margin="0,0,10,0" FontWeight="SemiBold" Foreground="#334155" Text="검색" />
                 <Button x:Name="CloseSearchButton" DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="CloseSearchButton_OnClick" Content="닫기" />
                 <Button x:Name="ResetSearchButton" DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="ResetSearchButton_OnClick" Content="초기화" />
                 <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="FindNextButton_OnClick" Content="다음" />
@@ -356,9 +356,9 @@
             </DockPanel>
         </Border>
 
-        <Border x:Name="ReplaceBar" Grid.Row="2" Background="#EEF2FF" BorderBrush="#A5B4FC" BorderThickness="0,0,0,1" Padding="10,7" Visibility="Collapsed">
+        <Border x:Name="ReplaceBar" Grid.Row="2" Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="0,0,0,1" Padding="10,7" Visibility="Collapsed">
             <DockPanel>
-                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Width="34" Click="CloseReplaceButton_OnClick" Content="×" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="CloseReplaceButton_OnClick" Content="닫기" />
                 <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="ReplaceAllButton_OnClick" Content="모두 바꾸기" />
                 <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="ReplaceOneButton_OnClick" Content="바꾸기" />
                 <Button DockPanel.Dock="Right" Style="{StaticResource SearchButtonStyle}" Click="FindNextButton_OnClick" Content="다음 찾기" />
