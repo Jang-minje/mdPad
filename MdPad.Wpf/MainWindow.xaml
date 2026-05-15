@@ -292,7 +292,6 @@
                     <MenuItem Header="링크 / 이미지 URL" Tag="link-image" Click="InsertMarkdownExampleMenuItem_OnClick" />
                     <MenuItem Header="로컬 이미지 sample.png" Tag="local-image" Click="InsertMarkdownExampleMenuItem_OnClick" />
                     <MenuItem Header="이미지 크기 지정 HTML" Tag="image-size" Click="InsertMarkdownExampleMenuItem_OnClick" />
-                    <MenuItem Header="MARC 코드블럭" Tag="marc" Click="InsertMarkdownExampleMenuItem_OnClick" />
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="옵션(_O)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">

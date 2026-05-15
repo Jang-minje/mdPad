@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _sessionSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly SessionStateStore _sessionStateStore = new();
     private readonly Dictionary<Guid, PreviewCacheEntry> _previewCache = [];
+    private readonly Dictionary<string, string> _localPreviewHosts = new(StringComparer.OrdinalIgnoreCase);
     private readonly double[] _fontSizes = Enumerable.Range(8, 29).Select(size => (double)size).ToArray();
     private bool _isUpdatingEditor;
     private bool _isUpdatingStyleControls;
@@ -651,7 +652,8 @@ public partial class MainWindow : Window
             Math.Abs(cache.FontSize - CurrentTab.FontSize) > 0.001 ||
             cache.Theme != _theme)
         {
-            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, CurrentTab.CodeBlockStates));
+            var previewMarkdown = PrepareMarkdownForPreview(CurrentTab.Markdown);
+            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, previewMarkdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, CurrentTab.CodeBlockStates));
             _previewCache[CurrentTab.Id] = cache;
             cacheChanged = true;
         }
@@ -1068,14 +1070,6 @@ public partial class MainWindow : Window
             "image-size" => $"""
 
                 <img src="{ToFileUri(GetSampleImagePath())}" alt="크기 지정 로컬 이미지" width="480" height="270" />
-
-                """,
-            "marc" => """
-
-                ```marc
-                245  a제목b부제c저자
-                260  a서울b출판사c2026
-                ```
 
                 """,
             _ => string.Empty,
@@ -2084,6 +2078,100 @@ public partial class MainWindow : Window
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "sample.png");
     }
 
+    private string PrepareMarkdownForPreview(string markdown)
+    {
+        if (string.IsNullOrEmpty(markdown))
+        {
+            return string.Empty;
+        }
+
+        var converted = Regex.Replace(
+            markdown,
+            @"!\[(?<alt>[^\]]*)\]\((?<src>[^)\r\n]+)\)",
+            match =>
+            {
+                var source = match.Groups["src"].Value.Trim();
+                return TryConvertLocalImageSource(source, out var previewUrl)
+                    ? $"![{match.Groups["alt"].Value}]({previewUrl})"
+                    : match.Value;
+            },
+            RegexOptions.IgnoreCase);
+
+        converted = Regex.Replace(
+            converted,
+            "(<img\\b[^>]*?\\bsrc\\s*=\\s*[\"'])(?<src>[^\"']+)([\"'][^>]*>)",
+            match =>
+            {
+                var source = match.Groups["src"].Value.Trim();
+                return TryConvertLocalImageSource(source, out var previewUrl)
+                    ? $"{match.Groups[1].Value}{previewUrl}{match.Groups[3].Value}"
+                    : match.Value;
+            },
+            RegexOptions.IgnoreCase);
+
+        return converted;
+    }
+
+    private bool TryConvertLocalImageSource(string source, out string previewUrl)
+    {
+        previewUrl = string.Empty;
+        var path = TryGetLocalPathFromImageSource(source);
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !IsSupportedImageFile(path))
+        {
+            return false;
+        }
+
+        previewUrl = GetLocalPreviewUrl(path);
+        return true;
+    }
+
+    private static string? TryGetLocalPathFromImageSource(string source)
+    {
+        if (string.IsNullOrWhiteSpace(source) ||
+            source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            source.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+            source.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (Uri.TryCreate(source, UriKind.Absolute, out var uri) && uri.IsFile)
+        {
+            return uri.LocalPath;
+        }
+
+        var trimmed = source.Trim('"', '\'');
+        if (Path.IsPathRooted(trimmed))
+        {
+            return trimmed;
+        }
+
+        return null;
+    }
+
+    private string GetLocalPreviewUrl(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        var folder = Path.GetDirectoryName(fullPath) ?? Environment.CurrentDirectory;
+        if (!_localPreviewHosts.TryGetValue(folder, out var host))
+        {
+            host = $"mdpad-{ComputeShortHash(folder)}.local";
+            _localPreviewHosts[folder] = host;
+            PreviewWebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                host,
+                folder,
+                CoreWebView2HostResourceAccessKind.Allow);
+        }
+
+        return $"https://{host}/{Uri.EscapeDataString(Path.GetFileName(fullPath))}";
+    }
+
+    private static string ComputeShortHash(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.ToUpperInvariant()));
+        return Convert.ToHexString(bytes, 0, 6).ToLowerInvariant();
+    }
+
     private static string ChangeCodeBlockLanguage(string markdown, int targetBlockIndex, string language)
     {
         var safeLanguage = string.IsNullOrWhiteSpace(language) ? "txt" : language.Trim();
@@ -2832,7 +2920,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.003";
+            return "2026.05.15.004";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
