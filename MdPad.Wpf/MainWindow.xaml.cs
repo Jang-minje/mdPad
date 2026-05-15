@@ -14,6 +14,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
+using System.Windows.Markup;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
@@ -44,6 +45,7 @@ public partial class MainWindow : Window
     private ThemeMode _theme = ThemeMode.Default;
     private EditorStyleSettings _defaultStyle = new();
     private StyleShortcutSettings _styleShortcuts = new();
+    private List<FontFamilyOption> _fontFamilyOptions = [];
     private int _lastSearchIndex = -1;
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
@@ -1132,10 +1134,11 @@ public partial class MainWindow : Window
 
         var fontComboBox = new System.Windows.Controls.ComboBox
         {
-            ItemsSource = FontFamilyComboBox.ItemsSource,
-            SelectedItem = CurrentTab.FontFamily,
-            Text = CurrentTab.FontFamily,
-            IsEditable = true,
+            ItemsSource = _fontFamilyOptions,
+            DisplayMemberPath = nameof(FontFamilyOption.DisplayName),
+            SelectedValuePath = nameof(FontFamilyOption.Source),
+            SelectedValue = CurrentTab.FontFamily,
+            IsEditable = false,
             MinWidth = 320,
             Height = 30,
             Background = inputBackground,
@@ -1209,7 +1212,7 @@ public partial class MainWindow : Window
 
         bool ApplyValues()
         {
-            var font = fontComboBox.SelectedItem as string ?? fontComboBox.Text;
+            var font = fontComboBox.SelectedValue as string;
             if (string.IsNullOrWhiteSpace(font) || !double.TryParse(sizeComboBox.Text, out var size))
             {
                 System.Windows.MessageBox.Show(dialog, "글꼴과 크기를 확인해 주세요.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -2379,16 +2382,41 @@ public partial class MainWindow : Window
         _isUpdatingStyleControls = true;
         try
         {
-            FontFamilyComboBox.ItemsSource = System.Windows.Media.Fonts.SystemFontFamilies
-                .Select(font => font.Source)
-                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            _fontFamilyOptions = System.Windows.Media.Fonts.SystemFontFamilies
+                .Select(CreateFontFamilyOption)
+                .GroupBy(option => option.Source, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(option => option.DisplayName, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
+            FontFamilyComboBox.ItemsSource = _fontFamilyOptions.Select(option => option.Source).ToList();
             FontSizeComboBox.ItemsSource = _fontSizes;
         }
         finally
         {
             _isUpdatingStyleControls = false;
         }
+    }
+
+    private static FontFamilyOption CreateFontFamilyOption(System.Windows.Media.FontFamily font)
+    {
+        var source = font.Source;
+        var localizedName =
+            TryGetFontFamilyName(font, "ko-KR") ??
+            TryGetFontFamilyName(font, "ko") ??
+            TryGetFontFamilyName(font, "en-US") ??
+            source;
+        var displayName = string.Equals(localizedName, source, StringComparison.OrdinalIgnoreCase)
+            ? source
+            : $"{localizedName} ({source})";
+
+        return new FontFamilyOption(displayName, source);
+    }
+
+    private static string? TryGetFontFamilyName(System.Windows.Media.FontFamily font, string language)
+    {
+        return font.FamilyNames.TryGetValue(XmlLanguage.GetLanguage(language), out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : null;
     }
 
     private void UpdateStyleControlsFromCurrentTab()
@@ -2853,6 +2881,8 @@ public partial class MainWindow : Window
     }
 
     private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
+
+    private sealed record FontFamilyOption(string DisplayName, string Source);
 
     private readonly record struct ProtocolCommand(string Kind, string Value);
 }
