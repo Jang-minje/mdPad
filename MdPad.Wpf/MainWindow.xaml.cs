@@ -1156,6 +1156,14 @@ public partial class MainWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
+    private const int SwRestore = 9;
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
     private void InsertTableMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertTableSnippet();
 
     private void InsertChecklistMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n- [ ] 할 일\n- [ ] 확인할 일\n");
@@ -3438,7 +3446,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.023";
+            return "2026.05.15.024";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
@@ -3544,8 +3552,32 @@ public partial class MainWindow : Window
     private void ShowFromTray()
     {
         Show();
-        WindowState = WindowState.Normal;
+        BringWindowToForeground();
+    }
+
+    private void BringWindowToForeground()
+    {
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        ShowInTaskbar = true;
+        var handle = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        if (handle != IntPtr.Zero)
+        {
+            ShowWindow(handle, SwRestore);
+        }
+
         Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+
+        if (handle != IntPtr.Zero)
+        {
+            SetForegroundWindow(handle);
+        }
     }
 
     private void HideToTray(bool showTip)
