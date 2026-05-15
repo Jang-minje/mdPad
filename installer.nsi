@@ -2,7 +2,7 @@ Unicode true
 !define APP_NAME "MD Pad WV2"
 !define APP_EXE "MdPad.Wpf.exe"
 !define INSTALL_DIR "$LOCALAPPDATA\Programs\MdPadWv2"
-!define APP_VERSION "2026.05.15.006"
+!define APP_VERSION "2026.05.15.007"
 
 Name "${APP_NAME}"
 OutFile "release\MdPadWv2-Setup-${APP_VERSION}.exe"

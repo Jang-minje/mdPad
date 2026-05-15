@@ -290,7 +290,6 @@ public partial class MainWindow : Window
 
         CurrentTab.Markdown = EditorTextBox.Text;
         _previewCache.Remove(CurrentTab.Id);
-        _renderedPreviewTabId = null;
         QueuePreviewRefresh();
         UpdateTitle();
         UpdateSearchStatus();
@@ -3031,7 +3030,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.006";
+            return "2026.05.15.007";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
