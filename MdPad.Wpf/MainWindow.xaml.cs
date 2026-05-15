@@ -864,13 +864,48 @@ public partial class MainWindow : Window
             }
         }
 
+        if (IsBacktickKey(e) && EditorTextBox.SelectionLength > 0)
+        {
+            WrapEditorSelectionInCodeBlock();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Tab)
         {
             var selectionStart = EditorTextBox.SelectionStart;
             EditorTextBox.SelectedText = "    ";
-            EditorTextBox.SelectionStart = selectionStart + 4;
+            EditorTextBox.Select(selectionStart + 4, 0);
             e.Handled = true;
         }
+    }
+
+    private static bool IsBacktickKey(System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        return Keyboard.Modifiers == ModifierKeys.None && key == Key.Oem3;
+    }
+
+    private void WrapEditorSelectionInCodeBlock()
+    {
+        var start = EditorTextBox.SelectionStart;
+        var selectedText = EditorTextBox.SelectedText.Replace("\r\n", "\n").Replace('\r', '\n').Trim('\n');
+        if (string.IsNullOrEmpty(selectedText))
+        {
+            return;
+        }
+
+        var text = EditorTextBox.Text;
+        var end = start + EditorTextBox.SelectionLength;
+        var needsLeadingNewLine = start > 0 && text[start - 1] is not '\n' and not '\r';
+        var needsTrailingNewLine = end < text.Length && text[end] is not '\n' and not '\r';
+        var prefix = needsLeadingNewLine ? "\n" : string.Empty;
+        var suffix = needsTrailingNewLine ? "\n" : string.Empty;
+        var replacement = $"{prefix}```txt\n{selectedText}\n```\n{suffix}";
+
+        EditorTextBox.SelectedText = replacement;
+        EditorTextBox.Select(start + replacement.Length, 0);
+        StatusTextBlock.Text = "선택 영역을 코드블럭으로 감쌌습니다.";
     }
 
     private void CutEditorSelection()
@@ -1192,7 +1227,7 @@ public partial class MainWindow : Window
         EnsureEditorAvailableForInsertion();
         var start = EditorTextBox.SelectionStart;
         EditorTextBox.SelectedText = snippet;
-        EditorTextBox.SelectionStart = start + snippet.Length;
+        EditorTextBox.Select(start + snippet.Length, 0);
     }
 
     private void EnsureEditorAvailableForInsertion()
@@ -2946,7 +2981,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.011";
+            return "2026.05.15.013";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
