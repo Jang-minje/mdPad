@@ -692,11 +692,7 @@ public partial class MainWindow : Window
 
         if (canPatchCurrentDocument && PreviewWebView.CoreWebView2 is not null)
         {
-            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadRenderPayload?.({cache.PayloadJson});");
-            if (_pendingPreviewScroll is { } scroll)
-            {
-                await RestorePreviewScrollAsync(scroll);
-            }
+            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadRenderPayload?.({cache.PayloadJson}, true);");
 
             if (!string.IsNullOrWhiteSpace(SearchTextBox.Text))
             {
@@ -3056,7 +3052,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.008";
+            return "2026.05.15.009";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

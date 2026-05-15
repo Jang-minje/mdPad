@@ -383,8 +383,31 @@ public sealed class MarkdownRenderer
               const setWrappedVisual = (wrap, wrapped) => {
                 wrap.classList.toggle('is-wrapped', !!wrapped);
               };
-              window.mdPadRenderPayload = (payload) => {
+              const captureScroll = () => {
+                const root = document.scrollingElement || document.documentElement || document.body;
+                const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
+                const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
+                const top = root.scrollTop || window.scrollY || 0;
+                const left = root.scrollLeft || window.scrollX || 0;
+                return {
+                  top,
+                  left,
+                  ratioTop: maxTop > 0 ? top / maxTop : 0,
+                  ratioLeft: maxLeft > 0 ? left / maxLeft : 0
+                };
+              };
+              const restoreScroll = (saved) => {
+                if (!saved) return;
+                const root = document.scrollingElement || document.documentElement || document.body;
+                const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
+                const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
+                const top = saved.top <= maxTop ? saved.top : Math.max(0, Math.min(maxTop, saved.ratioTop * maxTop));
+                const left = saved.left <= maxLeft ? saved.left : Math.max(0, Math.min(maxLeft, saved.ratioLeft * maxLeft));
+                root.scrollTo({ top, left, behavior: 'auto' });
+              };
+              window.mdPadRenderPayload = (payload, preserveScroll = false) => {
                 if (!article) return;
+                const savedScroll = preserveScroll ? captureScroll() : null;
                 document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
                 document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
                 document.title = payload.title || 'MD Pad';
@@ -487,6 +510,8 @@ public sealed class MarkdownRenderer
                   if (window.hljs) window.hljs.highlightElement(code);
                   if (normalizedLanguage === 'marc') visualizeMarcControls(code);
                 });
+                restoreScroll(savedScroll);
+                if (savedScroll) requestAnimationFrame(() => restoreScroll(savedScroll));
               };
               window.mdPadRenderPayload(initialPayload);
               article.addEventListener('click', (event) => {
