@@ -259,6 +259,17 @@ public sealed class MarkdownRenderer
               color: #111827 !important;
               box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
             }
+            .markdown-body .mdpad-search-render-hit {
+              border-radius: 4px;
+              background: {{markBackground}} !important;
+              color: {{markText}} !important;
+              box-shadow: 0 0 0 2px rgba(245, 158, 11, .12);
+            }
+            .markdown-body .mdpad-search-render-hit.mdpad-search-current {
+              background: #f59e0b !important;
+              color: #111827 !important;
+              box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
+            }
             .code-wrap.is-current-search-hit {
               border-color: #f59e0b;
               box-shadow: 0 0 0 3px rgba(245, 158, 11, .28);
@@ -516,19 +527,29 @@ public sealed class MarkdownRenderer
                   parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
                   parent.normalize();
                 });
+                article.querySelectorAll('.mdpad-search-render-hit').forEach((item) => {
+                  item.classList.remove('mdpad-search-render-hit', 'mdpad-search-current');
+                });
                 article.querySelectorAll('.code-wrap.is-search-hit').forEach((wrap) => wrap.classList.remove('is-search-hit'));
                 article.querySelectorAll('.code-wrap.is-current-search-hit').forEach((wrap) => wrap.classList.remove('is-current-search-hit'));
               };
               const searchState = { query: '', current: -1, hits: [] };
-              const searchTerms = (query) => {
+              const searchInfo = (query) => {
                 const raw = (query || '').toString().trim();
                 const terms = new Set();
                 if (raw) terms.add(raw.toLowerCase());
-                return Array.from(terms);
+                const unordered = raw.match(/^[-*+]\s+(.+)$/);
+                const inlineCode = raw.match(/^`([^`]+)`$/);
+                return {
+                  terms: Array.from(terms),
+                  unorderedListText: unordered?.[1]?.trim().toLowerCase() || '',
+                  inlineCodeText: inlineCode?.[1]?.trim().toLowerCase() || ''
+                };
               };
               const collectSearchHits = () => {
                 searchState.hits = [
                   ...Array.from(article.querySelectorAll('mark.mdpad-search-highlight')),
+                  ...Array.from(article.querySelectorAll('.mdpad-search-render-hit')),
                   ...Array.from(article.querySelectorAll('.code-wrap.is-search-hit'))
                 ];
               };
@@ -573,8 +594,25 @@ public sealed class MarkdownRenderer
                 searchState.current = -1;
                 searchState.hits = [];
                 if (!term) return;
-                const terms = searchTerms(term);
+                const { terms, unorderedListText, inlineCodeText } = searchInfo(term);
                 if (!terms.length) return;
+                if (unorderedListText) {
+                  article.querySelectorAll('li').forEach((item) => {
+                    const text = (item.textContent || '').trim().toLowerCase();
+                    if (text.includes(unorderedListText)) {
+                      item.classList.add('mdpad-search-render-hit');
+                    }
+                  });
+                }
+                if (inlineCodeText) {
+                  article.querySelectorAll('code').forEach((code) => {
+                    if (code.closest('pre')) return;
+                    const text = (code.textContent || '').trim().toLowerCase();
+                    if (text.includes(inlineCodeText)) {
+                      code.classList.add('mdpad-search-render-hit');
+                    }
+                  });
+                }
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {
                   const code = wrap.querySelector('pre code');
                   const codeText = (code?.textContent || '').toLowerCase();
@@ -611,6 +649,8 @@ public sealed class MarkdownRenderer
                 const current = searchState.hits[searchState.current];
                 if (current.classList.contains('code-wrap')) {
                   current.classList.add('is-current-search-hit');
+                } else if (current.classList.contains('mdpad-search-render-hit')) {
+                  current.classList.add('mdpad-search-current');
                 } else {
                   current.classList.add('mdpad-search-current');
                 }

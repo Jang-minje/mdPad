@@ -3113,7 +3113,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.017";
+            return "2026.05.15.018";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
