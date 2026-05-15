@@ -25,6 +25,24 @@ public sealed class MarkdownRenderer
         _highlightJs = ReadAsset(Path.Combine(assetDirectory, "highlight.min.js"));
     }
 
+    public string RenderPayload(
+        string title,
+        string markdown,
+        string fontFamily,
+        double fontSize,
+        IReadOnlyDictionary<string, CodeBlockViewState>? codeBlockStates = null)
+    {
+        var articleHtml = Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
+        return JsonSerializer.Serialize(new
+        {
+            title = string.IsNullOrWhiteSpace(title) ? "MD Pad" : title,
+            articleHtml,
+            fontFamily,
+            fontSize,
+            codeStates = codeBlockStates ?? new Dictionary<string, CodeBlockViewState>(),
+        });
+    }
+
     public string RenderDocument(
         string title,
         string markdown,
@@ -33,11 +51,7 @@ public sealed class MarkdownRenderer
         ThemeMode theme,
         IReadOnlyDictionary<string, CodeBlockViewState>? codeBlockStates = null)
     {
-        var articleHtml = Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
-        var titleJson = JsonSerializer.Serialize(string.IsNullOrWhiteSpace(title) ? "MD Pad" : title);
-        var fontJson = JsonSerializer.Serialize(fontFamily);
-        var articleJson = JsonSerializer.Serialize(articleHtml);
-        var codeStatesJson = JsonSerializer.Serialize(codeBlockStates ?? new Dictionary<string, CodeBlockViewState>());
+        var payloadJson = RenderPayload(title, markdown, fontFamily, fontSize, codeBlockStates);
         var isDark = theme == ThemeMode.Dark;
         var pageBackground = isDark ? "#0d1117" : "#ffffff";
         var textColor = isDark ? "#e6edf3" : "#24292f";
@@ -277,13 +291,7 @@ public sealed class MarkdownRenderer
           <script>{{_highlightJs}}</script>
           <script>
             (() => {
-              const payload = {
-                title: {{titleJson}},
-                articleHtml: {{articleJson}},
-                fontFamily: {{fontJson}},
-                fontSize: {{fontSize.ToString(System.Globalization.CultureInfo.InvariantCulture)}},
-                codeStates: {{codeStatesJson}}
-              };
+              const initialPayload = {{payloadJson}};
               const post = (message) => {
                 try { window.chrome?.webview?.postMessage(message); } catch {}
               };
@@ -350,17 +358,9 @@ public sealed class MarkdownRenderer
                 });
               };
               const article = document.querySelector('.markdown-body');
-              document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
-              document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
-              document.title = payload.title;
-              article.innerHTML = payload.articleHtml || '';
               registerPowerShellHighlight();
               registerMarcHighlight();
               const languages = ['text', 'txt', 'markdown', 'marc', 'bash', 'shell', 'powershell', 'sql', 'json', 'xml', 'html', 'css', 'javascript', 'typescript', 'python', 'csharp', 'java', 'cpp', 'yaml'];
-              article.querySelectorAll('li').forEach((item) => {
-                const checkbox = item.querySelector('input[type="checkbox"]');
-                if (checkbox) item.classList.toggle('mn-checked', !!checkbox.checked);
-              });
               const codeHash = (text) => {
                 let hash = 2166136261 >>> 0;
                 for (let i = 0; i < (text || '').length; i += 1) {
@@ -383,100 +383,112 @@ public sealed class MarkdownRenderer
               const setWrappedVisual = (wrap, wrapped) => {
                 wrap.classList.toggle('is-wrapped', !!wrapped);
               };
-              let codeIndex = 0;
-              article.querySelectorAll('pre > code').forEach((code) => {
-                const pre = code.parentElement;
-                if (!pre || pre.parentElement?.classList.contains('code-wrap')) return;
-                const languageClass = Array.from(code.classList).find((item) => item.startsWith('language-')) || 'language-text';
-                const language = languageClass.replace(/^language-/, '') || 'text';
-                const text = (code.textContent || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                const currentIndex = codeIndex++;
-                const stateKey = `${currentIndex}:${codeHash(text)}`;
-                const state = payload.codeStates?.[stateKey] || {};
-                const wrap = document.createElement('section');
-                wrap.className = 'code-wrap';
-                wrap.dataset.blockIndex = String(currentIndex);
-                wrap.dataset.stateKey = stateKey;
-                const toolbar = document.createElement('div');
-                toolbar.className = 'code-toolbar';
-                const left = document.createElement('div');
-                left.className = 'code-toolbar-left';
-                const right = document.createElement('div');
-                right.className = 'code-actions';
-                const toggle = document.createElement('button');
-                toggle.type = 'button';
-                toggle.className = 'code-chip';
-                toggle.dataset.role = 'collapse-toggle';
-                toggle.textContent = '접기';
-                const wrapButton = document.createElement('button');
-                wrapButton.type = 'button';
-                wrapButton.className = 'code-chip';
-                wrapButton.textContent = '줄바꿈';
-                const badge = document.createElement('select');
-                badge.className = 'code-chip';
-                const normalizedLanguage = language === 'text' ? 'txt' : language;
-                const optionSet = new Set([normalizedLanguage, ...languages]);
-                optionSet.forEach((item) => {
-                  const option = document.createElement('option');
-                  option.value = item;
-                  option.textContent = item;
-                  badge.appendChild(option);
+              window.mdPadRenderPayload = (payload) => {
+                if (!article) return;
+                document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
+                document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
+                document.title = payload.title || 'MD Pad';
+                article.innerHTML = payload.articleHtml || '';
+                article.querySelectorAll('li').forEach((item) => {
+                  const checkbox = item.querySelector('input[type="checkbox"]');
+                  if (checkbox) item.classList.toggle('mn-checked', !!checkbox.checked);
                 });
-                badge.value = normalizedLanguage;
-                const title = document.createElement('span');
-                title.className = 'code-title';
-                title.textContent = codeTitle(text);
-                title.title = title.textContent;
-                const edit = document.createElement('button');
-                edit.type = 'button';
-                edit.className = 'code-chip';
-                edit.textContent = '편집';
-                const copy = document.createElement('button');
-                copy.type = 'button';
-                copy.className = 'code-chip';
-                copy.textContent = '복사';
-                toggle.addEventListener('click', (event) => {
-                  event.stopPropagation();
-                  const collapsed = !wrap.classList.contains('is-collapsed');
-                  setCollapsedVisual(wrap, toggle, collapsed);
-                  post({ type: 'set-code-collapsed', key: stateKey, collapsed });
+                let codeIndex = 0;
+                article.querySelectorAll('pre > code').forEach((code) => {
+                  const pre = code.parentElement;
+                  if (!pre || pre.parentElement?.classList.contains('code-wrap')) return;
+                  const languageClass = Array.from(code.classList).find((item) => item.startsWith('language-')) || 'language-text';
+                  const language = languageClass.replace(/^language-/, '') || 'text';
+                  const text = (code.textContent || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                  const currentIndex = codeIndex++;
+                  const stateKey = `${currentIndex}:${codeHash(text)}`;
+                  const state = payload.codeStates?.[stateKey] || {};
+                  const wrap = document.createElement('section');
+                  wrap.className = 'code-wrap';
+                  wrap.dataset.blockIndex = String(currentIndex);
+                  wrap.dataset.stateKey = stateKey;
+                  const toolbar = document.createElement('div');
+                  toolbar.className = 'code-toolbar';
+                  const left = document.createElement('div');
+                  left.className = 'code-toolbar-left';
+                  const right = document.createElement('div');
+                  right.className = 'code-actions';
+                  const toggle = document.createElement('button');
+                  toggle.type = 'button';
+                  toggle.className = 'code-chip';
+                  toggle.dataset.role = 'collapse-toggle';
+                  toggle.textContent = '접기';
+                  const wrapButton = document.createElement('button');
+                  wrapButton.type = 'button';
+                  wrapButton.className = 'code-chip';
+                  wrapButton.textContent = '줄바꿈';
+                  const badge = document.createElement('select');
+                  badge.className = 'code-chip';
+                  const normalizedLanguage = language === 'text' ? 'txt' : language;
+                  const optionSet = new Set([normalizedLanguage, ...languages]);
+                  optionSet.forEach((item) => {
+                    const option = document.createElement('option');
+                    option.value = item;
+                    option.textContent = item;
+                    badge.appendChild(option);
+                  });
+                  badge.value = normalizedLanguage;
+                  const title = document.createElement('span');
+                  title.className = 'code-title';
+                  title.textContent = codeTitle(text);
+                  title.title = title.textContent;
+                  const edit = document.createElement('button');
+                  edit.type = 'button';
+                  edit.className = 'code-chip';
+                  edit.textContent = '편집';
+                  const copy = document.createElement('button');
+                  copy.type = 'button';
+                  copy.className = 'code-chip';
+                  copy.textContent = '복사';
+                  toggle.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const collapsed = !wrap.classList.contains('is-collapsed');
+                    setCollapsedVisual(wrap, toggle, collapsed);
+                    post({ type: 'set-code-collapsed', key: stateKey, collapsed });
+                  });
+                  wrapButton.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    const wrapped = !wrap.classList.contains('is-wrapped');
+                    setWrappedVisual(wrap, wrapped);
+                    post({ type: 'set-code-wrapped', key: stateKey, wrapped });
+                  });
+                  badge.addEventListener('change', (event) => {
+                    event.stopPropagation();
+                    post({ type: 'change-code-language', blockIndex: currentIndex, language: badge.value || 'txt' });
+                  });
+                  edit.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    post({ type: 'edit-code-block', blockIndex: currentIndex });
+                  });
+                  copy.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    try { await navigator.clipboard.writeText(text); } catch {}
+                    post({ type: 'copy-code', blockIndex: currentIndex, codeText: text });
+                  });
+                  left.appendChild(badge);
+                  if (title.textContent) left.appendChild(title);
+                  right.appendChild(edit);
+                  right.appendChild(toggle);
+                  right.appendChild(wrapButton);
+                  right.appendChild(copy);
+                  toolbar.appendChild(left);
+                  toolbar.appendChild(right);
+                  pre.parentNode.insertBefore(wrap, pre);
+                  wrap.appendChild(toolbar);
+                  wrap.appendChild(pre);
+                  setCollapsedVisual(wrap, toggle, !!(state.collapsed ?? state.Collapsed));
+                  setWrappedVisual(wrap, !!(state.wrapped ?? state.Wrapped));
+                  if (normalizedLanguage === 'marc') code.textContent = toMarcDisplayText(text);
+                  if (window.hljs) window.hljs.highlightElement(code);
+                  if (normalizedLanguage === 'marc') visualizeMarcControls(code);
                 });
-                wrapButton.addEventListener('click', (event) => {
-                  event.stopPropagation();
-                  const wrapped = !wrap.classList.contains('is-wrapped');
-                  setWrappedVisual(wrap, wrapped);
-                  post({ type: 'set-code-wrapped', key: stateKey, wrapped });
-                });
-                badge.addEventListener('change', (event) => {
-                  event.stopPropagation();
-                  post({ type: 'change-code-language', blockIndex: currentIndex, language: badge.value || 'txt' });
-                });
-                edit.addEventListener('click', (event) => {
-                  event.stopPropagation();
-                  post({ type: 'edit-code-block', blockIndex: currentIndex });
-                });
-                copy.addEventListener('click', async (event) => {
-                  event.stopPropagation();
-                  try { await navigator.clipboard.writeText(text); } catch {}
-                  post({ type: 'copy-code', blockIndex: currentIndex, codeText: text });
-                });
-                left.appendChild(badge);
-                if (title.textContent) left.appendChild(title);
-                right.appendChild(edit);
-                right.appendChild(toggle);
-                right.appendChild(wrapButton);
-                right.appendChild(copy);
-                toolbar.appendChild(left);
-                toolbar.appendChild(right);
-                pre.parentNode.insertBefore(wrap, pre);
-                wrap.appendChild(toolbar);
-                wrap.appendChild(pre);
-                setCollapsedVisual(wrap, toggle, !!(state.collapsed ?? state.Collapsed));
-                setWrappedVisual(wrap, !!(state.wrapped ?? state.Wrapped));
-                if (normalizedLanguage === 'marc') code.textContent = toMarcDisplayText(text);
-                if (window.hljs) window.hljs.highlightElement(code);
-                if (normalizedLanguage === 'marc') visualizeMarcControls(code);
-              });
+              };
+              window.mdPadRenderPayload(initialPayload);
               article.addEventListener('click', (event) => {
                 const target = event.target instanceof Element ? event.target : event.target?.parentElement;
                 if (!target) return;

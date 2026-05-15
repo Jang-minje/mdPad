@@ -646,8 +646,11 @@ public partial class MainWindow : Window
         }
 
         var currentTabId = CurrentTab.Id;
+        var hadCache = _previewCache.TryGetValue(CurrentTab.Id, out var cache);
+        var previousTheme = cache?.Theme;
         var cacheChanged = false;
-        if (!_previewCache.TryGetValue(CurrentTab.Id, out var cache) ||
+        if (!hadCache ||
+            cache is null ||
             cache.Markdown != CurrentTab.Markdown ||
             cache.Title != CurrentTab.Title ||
             cache.FontFamily != CurrentTab.FontFamily ||
@@ -655,7 +658,8 @@ public partial class MainWindow : Window
             cache.Theme != _theme)
         {
             var previewMarkdown = PrepareMarkdownForPreview(CurrentTab.Markdown);
-            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, _renderer.RenderDocument(CurrentTab.Title, previewMarkdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, CurrentTab.CodeBlockStates));
+            var payloadJson = _renderer.RenderPayload(CurrentTab.Title, previewMarkdown, CurrentTab.FontFamily, CurrentTab.FontSize, CurrentTab.CodeBlockStates);
+            cache = new PreviewCacheEntry(CurrentTab.Title, CurrentTab.Markdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, payloadJson, _renderer.RenderDocument(CurrentTab.Title, previewMarkdown, CurrentTab.FontFamily, CurrentTab.FontSize, _theme, CurrentTab.CodeBlockStates));
             _previewCache[CurrentTab.Id] = cache;
             cacheChanged = true;
         }
@@ -665,7 +669,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var shouldRestoreScroll = _renderedPreviewTabId == currentTabId && cacheChanged;
+        var canPatchCurrentDocument = _renderedPreviewTabId == currentTabId &&
+                                      cacheChanged &&
+                                      hadCache &&
+                                      previousTheme == _theme;
+        var shouldRestoreScroll = (_renderedPreviewTabId == currentTabId && cacheChanged) || canPatchCurrentDocument;
         if (shouldRestoreScroll)
         {
             _pendingPreviewScroll = await CapturePreviewScrollAsync();
@@ -679,6 +687,24 @@ public partial class MainWindow : Window
 
         if (CurrentTab?.Id != currentTabId)
         {
+            return;
+        }
+
+        if (canPatchCurrentDocument && PreviewWebView.CoreWebView2 is not null)
+        {
+            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadRenderPayload?.({cache.PayloadJson});");
+            if (_pendingPreviewScroll is { } scroll)
+            {
+                await RestorePreviewScrollAsync(scroll);
+            }
+
+            if (!string.IsNullOrWhiteSpace(SearchTextBox.Text))
+            {
+                await HighlightPreviewSearchAsync(SearchTextBox.Text);
+            }
+
+            _pendingPreviewScroll = null;
+            _pendingPreviewScrollTabId = null;
             return;
         }
 
@@ -3030,7 +3056,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.007";
+            return "2026.05.15.008";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
@@ -3245,7 +3271,7 @@ public partial class MainWindow : Window
         command?.SetValue(null, $"\"{exePath}\" \"%1\"");
     }
 
-    private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string Html);
+    private sealed record PreviewCacheEntry(string Title, string Markdown, string FontFamily, double FontSize, ThemeMode Theme, string PayloadJson, string Html);
 
     private sealed record PreviewScrollState(double Top, double Left, double MaxTop, double MaxLeft, double RatioTop, double RatioLeft);
 
