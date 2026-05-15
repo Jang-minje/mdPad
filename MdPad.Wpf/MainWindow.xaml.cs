@@ -1816,10 +1816,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_mode == DocumentMode.Preview && _isPreviewReady && PreviewWebView.CoreWebView2 is not null)
+        var shouldFindPreview = _mode is DocumentMode.Preview or DocumentMode.Split &&
+                                _isPreviewReady &&
+                                PreviewWebView.CoreWebView2 is not null;
+        if (_mode == DocumentMode.Preview && shouldFindPreview)
         {
-            var queryJson = JsonSerializer.Serialize(query);
-            await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadFindNext?.({queryJson}, {(forward ? "true" : "false")});");
+            await FindPreviewMatchAsync(query, forward);
             if (keepSearchFocus)
             {
                 SearchTextBox.Focus();
@@ -1832,6 +1834,11 @@ public partial class MainWindow : Window
         var index = FindEditorMatchIndex(text, query, forward);
         if (index < 0)
         {
+            if (shouldFindPreview)
+            {
+                await FindPreviewMatchAsync(query, forward);
+            }
+
             SearchStatusTextBlock.Text = "0개";
             return;
         }
@@ -1841,6 +1848,11 @@ public partial class MainWindow : Window
         EditorTextBox.Select(index, query.Length);
         EditorTextBox.ScrollToLine(EditorTextBox.GetLineIndexFromCharacterIndex(index));
         UpdateEditorSearchHighlight();
+        if (shouldFindPreview)
+        {
+            await FindPreviewMatchAsync(query, forward);
+        }
+
         if (keepSearchFocus)
         {
             _ = Dispatcher.BeginInvoke(() =>
@@ -1851,6 +1863,17 @@ public partial class MainWindow : Window
         }
 
         UpdateSearchStatus();
+    }
+
+    private async Task FindPreviewMatchAsync(string query, bool forward)
+    {
+        if (!_isPreviewReady || PreviewWebView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var queryJson = JsonSerializer.Serialize(query);
+        await PreviewWebView.CoreWebView2.ExecuteScriptAsync($"window.mdPadFindNext?.({queryJson}, {(forward ? "true" : "false")});");
     }
 
     private int FindEditorMatchIndex(string text, string query, bool forward)
@@ -2994,7 +3017,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.015";
+            return "2026.05.15.016";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
