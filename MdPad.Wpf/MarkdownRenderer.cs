@@ -537,14 +537,67 @@ public sealed class MarkdownRenderer
               const searchInfo = (query) => {
                 const raw = (query || '').toString().trim();
                 const terms = new Set();
-                if (raw) terms.add(raw.toLowerCase());
-                const unordered = raw.match(/^[-*+]\s+(.+)$/);
+                const structured = [];
+                const addStructured = (selector, text, options = {}) => {
+                  const value = (text || '').trim().toLowerCase();
+                  if (value) structured.push({ selector, text: value, ...options });
+                };
+                const task = raw.match(/^[-*+]\s+\[[ xX]\]\s+(.+)$/);
+                const unordered = task ? null : raw.match(/^[-*+]\s+(.+)$/);
+                const ordered = raw.match(/^\d+[\.)]\s+(.+)$/);
                 const inlineCode = raw.match(/^`([^`]+)`$/);
+                const fencedCode = raw.match(/^```[^\r\n]*\r?\n([\s\S]*?)\r?\n```$/);
+                const heading = raw.match(/^#{1,6}\s+(.+)$/);
+                const blockquote = raw.match(/^>\s+(.+)$/);
+                const strong = raw.match(/^(?:\*\*|__)(.+?)(?:\*\*|__)$/);
+                const emphasis = !strong ? raw.match(/^(?:\*|_)(.+?)(?:\*|_)$/) : null;
+                const strike = raw.match(/^~~(.+?)~~$/);
+                const image = raw.match(/^!\[([^\]]*)\]\([^)]+\)$/);
+                const link = !image ? raw.match(/^\[([^\]]+)\]\([^)]+\)$/) : null;
+                const tableRow = raw.startsWith('|') && raw.endsWith('|')
+                  ? raw.split('|').slice(1, -1).map((cell) => cell.trim()).filter((cell) => cell && !/^:?-{3,}:?$/.test(cell))
+                  : [];
+                addStructured('li', unordered?.[1]);
+                addStructured('li', ordered?.[1]);
+                addStructured('li', task?.[1]);
+                addStructured('h1, h2, h3, h4, h5, h6', heading?.[1]);
+                addStructured('blockquote', blockquote?.[1]);
+                addStructured('strong, b', strong?.[1]);
+                addStructured('em, i', emphasis?.[1]);
+                addStructured('del, s', strike?.[1]);
+                addStructured('a', link?.[1]);
+                addStructured('img', image?.[1], { attr: 'alt' });
+                addStructured('code', inlineCode?.[1], { excludeClosest: 'pre' });
+                addStructured('.code-wrap pre code', fencedCode?.[1], { markClosest: '.code-wrap' });
+                if (tableRow.length) {
+                  structured.push({ selector: 'tr', cells: tableRow.map((cell) => cell.toLowerCase()) });
+                }
+                if (raw && !structured.length) terms.add(raw.toLowerCase());
                 return {
                   terms: Array.from(terms),
-                  unorderedListText: unordered?.[1]?.trim().toLowerCase() || '',
-                  inlineCodeText: inlineCode?.[1]?.trim().toLowerCase() || ''
+                  structured
                 };
+              };
+              const exactText = (element) => (element?.textContent || '').trim().toLowerCase();
+              const markExactRenderedHits = ({ selector, text, attr, cells, excludeClosest, markClosest }) => {
+                article.querySelectorAll(selector).forEach((element) => {
+                  if (excludeClosest && element.closest(excludeClosest)) return;
+                  const target = markClosest ? element.closest(markClosest) : element;
+                  if (!target) return;
+                  if (cells) {
+                    const actualCells = Array.from(element.querySelectorAll('th, td'))
+                      .map((cell) => exactText(cell))
+                      .filter(Boolean);
+                    if (actualCells.length === cells.length && actualCells.every((cell, index) => cell === cells[index])) {
+                      target.classList.add('mdpad-search-render-hit');
+                    }
+                    return;
+                  }
+                  const actual = attr ? (element.getAttribute(attr) || '').trim().toLowerCase() : exactText(element);
+                  if (actual === text) {
+                    target.classList.add('mdpad-search-render-hit');
+                  }
+                });
               };
               const collectSearchHits = () => {
                 searchState.hits = [
@@ -594,25 +647,9 @@ public sealed class MarkdownRenderer
                 searchState.current = -1;
                 searchState.hits = [];
                 if (!term) return;
-                const { terms, unorderedListText, inlineCodeText } = searchInfo(term);
-                if (!terms.length) return;
-                if (unorderedListText) {
-                  article.querySelectorAll('li').forEach((item) => {
-                    const text = (item.textContent || '').trim().toLowerCase();
-                    if (text.includes(unorderedListText)) {
-                      item.classList.add('mdpad-search-render-hit');
-                    }
-                  });
-                }
-                if (inlineCodeText) {
-                  article.querySelectorAll('code').forEach((code) => {
-                    if (code.closest('pre')) return;
-                    const text = (code.textContent || '').trim().toLowerCase();
-                    if (text.includes(inlineCodeText)) {
-                      code.classList.add('mdpad-search-render-hit');
-                    }
-                  });
-                }
+                const { terms, structured } = searchInfo(term);
+                if (!terms.length && !structured.length) return;
+                structured.forEach(markExactRenderedHits);
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {
                   const code = wrap.querySelector('pre code');
                   const codeText = (code?.textContent || '').toLowerCase();

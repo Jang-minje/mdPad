@@ -6,10 +6,10 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
-    <Version>2026.5.15.18</Version>
-    <AssemblyVersion>2026.5.15.18</AssemblyVersion>
-    <FileVersion>2026.5.15.18</FileVersion>
-    <InformationalVersion>2026.05.15.018</InformationalVersion>
+    <Version>2026.5.15.19</Version>
+    <AssemblyVersion>2026.5.15.19</AssemblyVersion>
+    <FileVersion>2026.5.15.19</FileVersion>
+    <InformationalVersion>2026.05.15.019</InformationalVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
