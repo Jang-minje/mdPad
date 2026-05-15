@@ -54,6 +54,8 @@ public partial class MainWindow : Window
     private ScrollViewer? _tabsScrollViewer;
     private SearchHighlightAdorner? _editorSearchAdorner;
     private string _lastRenderedHtml = string.Empty;
+    private bool _isTabSwitcherOpen;
+    private int _tabSwitcherIndex = -1;
 
     public MainWindow()
     {
@@ -72,6 +74,7 @@ public partial class MainWindow : Window
         };
         Loaded += MainWindow_OnLoaded;
         PreviewKeyDown += MainWindow_OnPreviewKeyDown;
+        PreviewKeyUp += MainWindow_OnPreviewKeyUp;
     }
 
     public ObservableCollection<DocumentTab> Tabs { get; }
@@ -401,6 +404,55 @@ public partial class MainWindow : Window
         var nextIndex = (currentIndex + offset + Tabs.Count) % Tabs.Count;
         TabsListBox.SelectedIndex = nextIndex;
         TabsListBox.ScrollIntoView(Tabs[nextIndex]);
+    }
+
+    private void ShowOrMoveTabSwitcher(int offset)
+    {
+        if (Tabs.Count <= 1)
+        {
+            return;
+        }
+
+        if (!_isTabSwitcherOpen)
+        {
+            _isTabSwitcherOpen = true;
+            _tabSwitcherIndex = TabsListBox.SelectedIndex < 0 ? 0 : TabsListBox.SelectedIndex;
+            TabSwitcherOverlay.Visibility = Visibility.Visible;
+        }
+
+        _tabSwitcherIndex = (_tabSwitcherIndex + offset + Tabs.Count) % Tabs.Count;
+        TabSwitcherListBox.SelectedIndex = _tabSwitcherIndex;
+        TabSwitcherListBox.ScrollIntoView(Tabs[_tabSwitcherIndex]);
+    }
+
+    private void CommitTabSwitcher()
+    {
+        if (!_isTabSwitcherOpen)
+        {
+            return;
+        }
+
+        TabSwitcherOverlay.Visibility = Visibility.Collapsed;
+        _isTabSwitcherOpen = false;
+        if (_tabSwitcherIndex >= 0 && _tabSwitcherIndex < Tabs.Count)
+        {
+            TabsListBox.SelectedIndex = _tabSwitcherIndex;
+            TabsListBox.ScrollIntoView(Tabs[_tabSwitcherIndex]);
+        }
+
+        _tabSwitcherIndex = -1;
+    }
+
+    private void CancelTabSwitcher()
+    {
+        if (!_isTabSwitcherOpen)
+        {
+            return;
+        }
+
+        TabSwitcherOverlay.Visibility = Visibility.Collapsed;
+        _isTabSwitcherOpen = false;
+        _tabSwitcherIndex = -1;
     }
 
     private void TabCloseButton_OnClick(object sender, RoutedEventArgs e)
@@ -868,9 +920,26 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == Key.Escape && _isTabSwitcherOpen)
+        {
+            CancelTabSwitcher();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible)
         {
             HideSearch();
+            e.Handled = true;
+        }
+    }
+
+    private void MainWindow_OnPreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (_isTabSwitcherOpen && key is Key.LeftCtrl or Key.RightCtrl)
+        {
+            CommitTabSwitcher();
             e.Handled = true;
         }
     }
@@ -1196,14 +1265,30 @@ public partial class MainWindow : Window
 
         if (IsShortcutMatch(_appShortcuts.NextTab, e))
         {
-            SelectNextTab();
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                ShowOrMoveTabSwitcher(1);
+            }
+            else
+            {
+                SelectNextTab();
+            }
+
             e.Handled = true;
             return true;
         }
 
         if (IsShortcutMatch(_appShortcuts.PreviousTab, e))
         {
-            SelectPreviousTab();
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                ShowOrMoveTabSwitcher(-1);
+            }
+            else
+            {
+                SelectPreviousTab();
+            }
+
             e.Handled = true;
             return true;
         }
@@ -3275,7 +3360,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.020";
+            return "2026.05.15.021";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
