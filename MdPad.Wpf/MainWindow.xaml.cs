@@ -810,6 +810,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == Key.F3 && Keyboard.Modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        {
+            Find(forward: Keyboard.Modifiers != ModifierKeys.Shift, keepSearchFocus: SearchTextBox.IsKeyboardFocusWithin);
+            e.Handled = true;
+            return;
+        }
+
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.S)
         {
             SaveCurrentTab(false);
@@ -2987,7 +2994,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.014";
+            return "2026.05.15.015";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

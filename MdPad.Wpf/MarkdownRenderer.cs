@@ -520,29 +520,57 @@ public sealed class MarkdownRenderer
                 article.querySelectorAll('.code-wrap.is-current-search-hit').forEach((wrap) => wrap.classList.remove('is-current-search-hit'));
               };
               const searchState = { query: '', current: -1, hits: [] };
+              const searchTerms = (query) => {
+                const raw = (query || '').toString().trim();
+                const terms = new Set();
+                if (raw) terms.add(raw.toLowerCase());
+                const normalized = raw
+                  .replace(/^[-*+]\s+/, '')
+                  .replace(/^\d+[.)]\s+/, '')
+                  .replace(/^>\s+/, '')
+                  .replace(/^#{1,6}\s+/, '')
+                  .replace(/^[-*+]\s+\[[ xX]\]\s+/, '')
+                  .trim();
+                if (normalized) terms.add(normalized.toLowerCase());
+                return Array.from(terms);
+              };
               const collectSearchHits = () => {
                 searchState.hits = [
                   ...Array.from(article.querySelectorAll('mark.mdpad-search-highlight')),
                   ...Array.from(article.querySelectorAll('.code-wrap.is-search-hit'))
                 ];
               };
-              const highlightTextNode = (node, queryLower) => {
+              const highlightTextNode = (node, terms) => {
                 const text = node.nodeValue || '';
                 const lower = text.toLowerCase();
-                const index = lower.indexOf(queryLower);
-                if (index < 0) return;
+                const matches = [];
+                terms.forEach((term) => {
+                  let current = lower.indexOf(term);
+                  while (current >= 0) {
+                    matches.push({ index: current, length: term.length });
+                    current = lower.indexOf(term, current + term.length);
+                  }
+                });
+                matches.sort((a, b) => a.index - b.index || b.length - a.length);
+                const filtered = [];
+                let coveredUntil = -1;
+                matches.forEach((match) => {
+                  if (match.index >= coveredUntil) {
+                    filtered.push(match);
+                    coveredUntil = match.index + match.length;
+                  }
+                });
+                if (!filtered.length) return;
                 const fragment = document.createDocumentFragment();
                 let cursor = 0;
-                let current = index;
-                while (current >= 0) {
-                  if (current > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, current)));
+                filtered.forEach((match) => {
+                  if (match.index > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, match.index)));
                   const mark = document.createElement('mark');
                   mark.className = 'mdpad-search-highlight';
-                  mark.textContent = text.slice(current, current + queryLower.length);
+                  mark.textContent = text.slice(match.index, match.index + match.length);
                   fragment.appendChild(mark);
-                  cursor = current + queryLower.length;
-                  current = lower.indexOf(queryLower, cursor);
-                }
+                  cursor = match.index + match.length;
+                });
                 if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)));
                 node.parentNode?.replaceChild(fragment, node);
               };
@@ -553,10 +581,12 @@ public sealed class MarkdownRenderer
                 searchState.current = -1;
                 searchState.hits = [];
                 if (!term) return;
-                const queryLower = term.toLowerCase();
+                const terms = searchTerms(term);
+                if (!terms.length) return;
                 article.querySelectorAll('.code-wrap').forEach((wrap) => {
                   const code = wrap.querySelector('pre code');
-                  if (wrap.classList.contains('is-collapsed') && (code?.textContent || '').toLowerCase().includes(queryLower)) {
+                  const codeText = (code?.textContent || '').toLowerCase();
+                  if (wrap.classList.contains('is-collapsed') && terms.some((item) => codeText.includes(item))) {
                     wrap.classList.add('is-search-hit');
                   }
                 });
@@ -565,14 +595,15 @@ public sealed class MarkdownRenderer
                     const parent = node.parentElement;
                     if (!parent || !node.nodeValue?.trim()) return NodeFilter.FILTER_REJECT;
                     if (parent.closest('.code-toolbar, script, style')) return NodeFilter.FILTER_REJECT;
-                    return node.nodeValue.toLowerCase().includes(queryLower)
+                    const lower = node.nodeValue.toLowerCase();
+                    return terms.some((item) => lower.includes(item))
                       ? NodeFilter.FILTER_ACCEPT
                       : NodeFilter.FILTER_REJECT;
                   }
                 });
                 const nodes = [];
                 while (walker.nextNode()) nodes.push(walker.currentNode);
-                nodes.forEach((node) => highlightTextNode(node, queryLower));
+                nodes.forEach((node) => highlightTextNode(node, terms));
                 collectSearchHits();
               };
               window.mdPadFindNext = (query, forward) => {
