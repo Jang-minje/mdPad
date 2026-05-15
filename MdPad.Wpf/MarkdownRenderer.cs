@@ -405,19 +405,34 @@ public sealed class MarkdownRenderer
                 const left = saved.left <= maxLeft ? saved.left : Math.max(0, Math.min(maxLeft, saved.ratioLeft * maxLeft));
                 root.scrollTo({ top, left, behavior: 'auto' });
               };
-              window.mdPadRenderPayload = (payload, preserveScroll = false) => {
-                if (!article) return;
-                const savedScroll = preserveScroll ? captureScroll() : null;
+              const waitForImages = (root) => {
+                const images = Array.from(root.querySelectorAll('img'));
+                if (!images.length) return Promise.resolve();
+                const imageReady = (img) => {
+                  const loaded = img.complete
+                    ? Promise.resolve()
+                    : new Promise((resolve) => {
+                        img.addEventListener('load', resolve, { once: true });
+                        img.addEventListener('error', resolve, { once: true });
+                      });
+                  return loaded.then(() => img.decode?.().catch(() => {}) ?? undefined);
+                };
+                return Promise.race([
+                  Promise.all(images.map(imageReady)),
+                  new Promise((resolve) => setTimeout(resolve, 700))
+                ]);
+              };
+              const buildArticle = (target, payload) => {
                 document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
                 document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
                 document.title = payload.title || 'MD Pad';
-                article.innerHTML = payload.articleHtml || '';
-                article.querySelectorAll('li').forEach((item) => {
+                target.innerHTML = payload.articleHtml || '';
+                target.querySelectorAll('li').forEach((item) => {
                   const checkbox = item.querySelector('input[type="checkbox"]');
                   if (checkbox) item.classList.toggle('mn-checked', !!checkbox.checked);
                 });
                 let codeIndex = 0;
-                article.querySelectorAll('pre > code').forEach((code) => {
+                target.querySelectorAll('pre > code').forEach((code) => {
                   const pre = code.parentElement;
                   if (!pre || pre.parentElement?.classList.contains('code-wrap')) return;
                   const languageClass = Array.from(code.classList).find((item) => item.startsWith('language-')) || 'language-text';
@@ -510,6 +525,33 @@ public sealed class MarkdownRenderer
                   if (window.hljs) window.hljs.highlightElement(code);
                   if (normalizedLanguage === 'marc') visualizeMarcControls(code);
                 });
+              };
+              window.mdPadRenderPayload = async (payload, preserveScroll = false) => {
+                if (!article) return;
+                if (!preserveScroll) {
+                  buildArticle(article, payload);
+                  return;
+                }
+
+                const savedScroll = captureScroll();
+                const staging = document.createElement('article');
+                staging.className = article.className;
+                staging.style.position = 'absolute';
+                staging.style.visibility = 'hidden';
+                staging.style.pointerEvents = 'none';
+                staging.style.left = '-100000px';
+                staging.style.top = '0';
+                staging.style.width = `${article.getBoundingClientRect().width || document.documentElement.clientWidth}px`;
+                staging.style.maxWidth = getComputedStyle(article).maxWidth;
+                document.body.appendChild(staging);
+                buildArticle(staging, payload);
+                await waitForImages(staging);
+
+                article.replaceChildren();
+                while (staging.firstChild) {
+                  article.appendChild(staging.firstChild);
+                }
+                staging.remove();
                 restoreScroll(savedScroll);
                 if (savedScroll) requestAnimationFrame(() => restoreScroll(savedScroll));
               };
