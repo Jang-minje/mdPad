@@ -281,6 +281,19 @@
                 <MenuItem x:Name="ImageInsertMenuItem" Header="이미지 삽입" Click="InsertImageMenuItem_OnClick" />
                 <MenuItem x:Name="LinkInsertMenuItem" Header="링크 삽입" Click="InsertLinkMenuItem_OnClick" />
                 <MenuItem x:Name="DividerInsertMenuItem" Header="구분선 삽입" Click="InsertDividerMenuItem_OnClick" />
+                <Separator />
+                <MenuItem Header="예제 삽입">
+                    <MenuItem Header="제목 / 문단" Tag="heading" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="목록" Tag="list" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="체크리스트" Tag="checklist" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="표" Tag="table" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="코드블럭" Tag="code" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="인용 / 구분선" Tag="quote" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="링크 / 이미지 URL" Tag="link-image" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="로컬 이미지 sample.png" Tag="local-image" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="이미지 크기 지정 HTML" Tag="image-size" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                    <MenuItem Header="MARC 코드블럭" Tag="marc" Click="InsertMarkdownExampleMenuItem_OnClick" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="옵션(_O)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem x:Name="StartupMenuItem"
@@ -445,7 +458,7 @@
             </DockPanel>
         </Border>
 
-        <Grid x:Name="ContentGrid" Grid.Row="4" Margin="0" PreviewMouseWheel="ContentHost_OnPreviewMouseWheel">
+        <Grid x:Name="ContentGrid" Grid.Row="4" Margin="0" PreviewMouseWheel="ContentHost_OnPreviewMouseWheel" AllowDrop="True" PreviewDragOver="ContentHost_OnPreviewDragOver" PreviewDrop="ContentHost_OnPreviewDrop">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition x:Name="EditorColumn" Width="*" />
                 <ColumnDefinition x:Name="SplitSeparatorColumn" Width="0" />
@@ -453,6 +466,7 @@
             </Grid.ColumnDefinitions>
             <Border x:Name="EditorHost" Grid.Column="0" Background="#3B3B3B" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0">
                 <TextBox x:Name="EditorTextBox"
+                         AllowDrop="True"
                          AcceptsReturn="True"
                          AcceptsTab="True"
                          Background="#3B3B3B"
@@ -464,13 +478,15 @@
                          HorizontalScrollBarVisibility="Auto"
                          VerticalScrollBarVisibility="Auto"
                          TextChanged="EditorTextBox_OnTextChanged"
+                         PreviewDragOver="ContentHost_OnPreviewDragOver"
+                         PreviewDrop="ContentHost_OnPreviewDrop"
                          PreviewKeyDown="EditorTextBox_OnPreviewKeyDown"
                          Padding="18,12"
                          TextWrapping="NoWrap" />
             </Border>
             <GridSplitter x:Name="SplitGridSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#3E3E42" Visibility="Collapsed" />
-            <Border x:Name="PreviewHost" Grid.Column="2" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed">
-                <wv2:WebView2 x:Name="PreviewWebView" DefaultBackgroundColor="#FFFAFAFA" NavigationCompleted="PreviewWebView_OnNavigationCompleted" />
+            <Border x:Name="PreviewHost" Grid.Column="2" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed" AllowDrop="True" PreviewDragOver="ContentHost_OnPreviewDragOver" PreviewDrop="ContentHost_OnPreviewDrop">
+                <wv2:WebView2 x:Name="PreviewWebView" DefaultBackgroundColor="#FFFAFAFA" NavigationCompleted="PreviewWebView_OnNavigationCompleted" AllowDrop="False" />
             </Border>
         </Grid>
 

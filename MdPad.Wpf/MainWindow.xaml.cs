@@ -86,6 +86,7 @@ public partial class MainWindow : Window
 
         InitializeTray();
         await PreviewWebView.EnsureCoreWebView2Async();
+        PreviewWebView.AllowExternalDrop = false;
         PreviewWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = true;
         PreviewWebView.CoreWebView2.WebMessageReceived += PreviewWebView_OnWebMessageReceived;
         _isPreviewReady = true;
@@ -984,6 +985,102 @@ public partial class MainWindow : Window
     private void InsertDividerMenuItem_OnClick(object sender, RoutedEventArgs e) => InsertSnippet("\n---\n");
 
     private void InsertTableSnippet() => InsertSnippet("\n| 왼쪽 정렬 | 가운데 정렬 | 오른쪽 정렬 |\n| :--- | :---: | ---: |\n| 값 | 내용 | 100 |\n");
+
+    private void InsertMarkdownExampleMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string kind)
+        {
+            return;
+        }
+
+        InsertSnippet(GetMarkdownExample(kind));
+    }
+
+    private static string GetMarkdownExample(string kind)
+    {
+        return kind switch
+        {
+            "heading" => """
+
+                # 1단계 제목
+
+                일반 문단입니다. **굵게**, *기울임*, `인라인 코드`를 사용할 수 있습니다.
+
+                ## 2단계 제목
+
+                문단 사이에는 빈 줄을 둡니다.
+
+                """,
+            "list" => """
+
+                - 첫 번째 항목
+                - 두 번째 항목
+                  - 하위 항목
+                1. 번호 목록
+                2. 다음 번호
+
+                """,
+            "checklist" => """
+
+                - [ ] 처리할 일
+                - [x] 완료한 일
+                - [ ] `코드`가 포함된 체크 항목
+
+                """,
+            "table" => """
+
+                | 왼쪽 정렬 | 가운데 정렬 | 오른쪽 정렬 |
+                | :--- | :---: | ---: |
+                | 텍스트 | 값 | 100 |
+                | 텍스트 | 값 | 200 |
+
+                """,
+            "code" => """
+
+                ```sql
+                -- 사용자 목록
+                SELECT id, name
+                FROM users
+                WHERE active = 1;
+                ```
+
+                """,
+            "quote" => """
+
+                > 인용문입니다.
+                > 여러 줄로 작성할 수 있습니다.
+
+                ---
+
+                """,
+            "link-image" => """
+
+                [OpenAI](https://openai.com)
+
+                ![온라인 이미지](https://via.placeholder.com/480x240.png)
+
+                """,
+            "local-image" => $"""
+
+                ![로컬 sample 이미지]({ToFileUri(GetSampleImagePath())})
+
+                """,
+            "image-size" => $"""
+
+                <img src="{ToFileUri(GetSampleImagePath())}" alt="크기 지정 로컬 이미지" width="480" height="270" />
+
+                """,
+            "marc" => """
+
+                ```marc
+                245  a제목b부제c저자
+                260  a서울b출판사c2026
+                ```
+
+                """,
+            _ => string.Empty,
+        };
+    }
 
     private bool TryHandleStyleShortcut(System.Windows.Input.KeyEventArgs e)
     {
@@ -1891,18 +1988,44 @@ public partial class MainWindow : Window
 
     private void Window_OnDragOver(object sender, System.Windows.DragEventArgs e)
     {
-        e.Effects = GetDroppedMarkdownFiles(e).Count > 0 ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+        e.Effects = GetDroppedSupportedFiles(e).Count > 0 ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
         e.Handled = true;
     }
 
     private void Window_OnDrop(object sender, System.Windows.DragEventArgs e)
     {
+        HandleDroppedFiles(e);
+    }
+
+    private void ContentHost_OnPreviewDragOver(object sender, System.Windows.DragEventArgs e)
+    {
+        e.Effects = GetDroppedSupportedFiles(e).Count > 0 ? System.Windows.DragDropEffects.Copy : System.Windows.DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void ContentHost_OnPreviewDrop(object sender, System.Windows.DragEventArgs e)
+    {
+        HandleDroppedFiles(e);
+    }
+
+    private void HandleDroppedFiles(System.Windows.DragEventArgs e)
+    {
         foreach (var path in GetDroppedMarkdownFiles(e))
         {
             OpenFileInTab(path);
         }
+
+        var imageFiles = GetDroppedImageFiles(e);
+        if (imageFiles.Count > 0)
+        {
+            InsertSnippet(string.Join(Environment.NewLine, imageFiles.Select(CreateMarkdownImageLink)) + Environment.NewLine);
+        }
+
         e.Handled = true;
     }
+
+    private static List<string> GetDroppedSupportedFiles(System.Windows.DragEventArgs e) =>
+        GetDroppedMarkdownFiles(e).Concat(GetDroppedImageFiles(e)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
     private static List<string> GetDroppedMarkdownFiles(System.Windows.DragEventArgs e)
     {
@@ -1915,6 +2038,50 @@ public partial class MainWindow : Window
         return paths
             .Where(path => path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".markdown", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
             .ToList();
+    }
+
+    private static List<string> GetDroppedImageFiles(System.Windows.DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(System.Windows.DataFormats.FileDrop) ||
+            e.Data.GetData(System.Windows.DataFormats.FileDrop) is not string[] paths)
+        {
+            return [];
+        }
+
+        return paths
+            .Where(IsSupportedImageFile)
+            .ToList();
+    }
+
+    private static bool IsSupportedImageFile(string path) =>
+        path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase);
+
+    private static string CreateMarkdownImageLink(string path)
+    {
+        var alt = Path.GetFileNameWithoutExtension(path).Replace("]", "\\]", StringComparison.Ordinal);
+        return $"![{alt}]({ToFileUri(path)})";
+    }
+
+    private static string ToFileUri(string path) => new Uri(Path.GetFullPath(path)).AbsoluteUri;
+
+    private static string GetSampleImagePath()
+    {
+        var outputPath = Path.Combine(AppContext.BaseDirectory, "sample.png");
+        if (File.Exists(outputPath))
+        {
+            return outputPath;
+        }
+
+        var developmentPath = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "sample.png"));
+        return File.Exists(developmentPath)
+            ? developmentPath
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "sample.png");
     }
 
     private static string ChangeCodeBlockLanguage(string markdown, int targetBlockIndex, string language)
@@ -2665,7 +2832,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.002";
+            return "2026.05.15.003";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
