@@ -1034,6 +1034,12 @@ public partial class MainWindow : Window
     private void InsertCodeBlockMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         EnsureEditorAvailableForInsertion();
+        if (EditorTextBox.SelectionLength > 0)
+        {
+            WrapEditorSelectionInCodeBlock();
+            return;
+        }
+
         const string prefix = "\n```txt\n";
         const string suffix = "\n```\n";
         var start = EditorTextBox.SelectionStart;
@@ -2981,7 +2987,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.013";
+            return "2026.05.15.014";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);

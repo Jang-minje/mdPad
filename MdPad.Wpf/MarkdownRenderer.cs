@@ -9,6 +9,7 @@ public sealed class MarkdownRenderer
 {
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder()
         .UseAdvancedExtensions()
+        .UseSoftlineBreakAsHardlineBreak()
         .Build();
 
     private readonly string _githubLightCss;
