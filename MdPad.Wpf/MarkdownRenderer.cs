@@ -383,45 +383,6 @@ public sealed class MarkdownRenderer
               const setWrappedVisual = (wrap, wrapped) => {
                 wrap.classList.toggle('is-wrapped', !!wrapped);
               };
-              const captureScroll = () => {
-                const root = document.scrollingElement || document.documentElement || document.body;
-                const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
-                const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
-                const top = root.scrollTop || window.scrollY || 0;
-                const left = root.scrollLeft || window.scrollX || 0;
-                return {
-                  top,
-                  left,
-                  ratioTop: maxTop > 0 ? top / maxTop : 0,
-                  ratioLeft: maxLeft > 0 ? left / maxLeft : 0
-                };
-              };
-              const restoreScroll = (saved) => {
-                if (!saved) return;
-                const root = document.scrollingElement || document.documentElement || document.body;
-                const maxTop = Math.max(0, root.scrollHeight - window.innerHeight);
-                const maxLeft = Math.max(0, root.scrollWidth - window.innerWidth);
-                const top = saved.top <= maxTop ? saved.top : Math.max(0, Math.min(maxTop, saved.ratioTop * maxTop));
-                const left = saved.left <= maxLeft ? saved.left : Math.max(0, Math.min(maxLeft, saved.ratioLeft * maxLeft));
-                root.scrollTo({ top, left, behavior: 'auto' });
-              };
-              const waitForImages = (root) => {
-                const images = Array.from(root.querySelectorAll('img'));
-                if (!images.length) return Promise.resolve();
-                const imageReady = (img) => {
-                  const loaded = img.complete
-                    ? Promise.resolve()
-                    : new Promise((resolve) => {
-                        img.addEventListener('load', resolve, { once: true });
-                        img.addEventListener('error', resolve, { once: true });
-                      });
-                  return loaded.then(() => img.decode?.().catch(() => {}) ?? undefined);
-                };
-                return Promise.race([
-                  Promise.all(images.map(imageReady)),
-                  new Promise((resolve) => setTimeout(resolve, 700))
-                ]);
-              };
               const buildArticle = (target, payload) => {
                 document.documentElement.style.setProperty('--pad-font-family', `"${payload.fontFamily}", "Malgun Gothic", "Segoe UI", sans-serif`);
                 document.documentElement.style.setProperty('--pad-font-size', `${payload.fontSize}px`);
@@ -526,34 +487,9 @@ public sealed class MarkdownRenderer
                   if (normalizedLanguage === 'marc') visualizeMarcControls(code);
                 });
               };
-              window.mdPadRenderPayload = async (payload, preserveScroll = false) => {
+              window.mdPadRenderPayload = (payload) => {
                 if (!article) return;
-                if (!preserveScroll) {
-                  buildArticle(article, payload);
-                  return;
-                }
-
-                const savedScroll = captureScroll();
-                const staging = document.createElement('article');
-                staging.className = article.className;
-                staging.style.position = 'absolute';
-                staging.style.visibility = 'hidden';
-                staging.style.pointerEvents = 'none';
-                staging.style.left = '-100000px';
-                staging.style.top = '0';
-                staging.style.width = `${article.getBoundingClientRect().width || document.documentElement.clientWidth}px`;
-                staging.style.maxWidth = getComputedStyle(article).maxWidth;
-                document.body.appendChild(staging);
-                buildArticle(staging, payload);
-                await waitForImages(staging);
-
-                article.replaceChildren();
-                while (staging.firstChild) {
-                  article.appendChild(staging.firstChild);
-                }
-                staging.remove();
-                restoreScroll(savedScroll);
-                if (savedScroll) requestAnimationFrame(() => restoreScroll(savedScroll));
+                buildArticle(article, payload);
               };
               window.mdPadRenderPayload(initialPayload);
               article.addEventListener('click', (event) => {
