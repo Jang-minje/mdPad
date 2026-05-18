@@ -952,7 +952,7 @@ public partial class MainWindow : Window
 
         if (e.Key == Key.Escape && SearchBar.Visibility == Visibility.Visible)
         {
-            HideSearch();
+            HandleSearchEscape();
             e.Handled = true;
         }
     }
@@ -1958,10 +1958,23 @@ public partial class MainWindow : Window
 
     private static WpfSolidColorBrush WpfSolidColorBrushCache(string hex) => Brush(hex);
 
+    private void ResetSearch()
+    {
+        SearchTextBox.Clear();
+        _lastSearchIndex = -1;
+        _lastSearchLength = 0;
+        UpdateSearchStatus();
+        UpdateEditorSearchHighlight();
+        if (_mode is DocumentMode.Preview or DocumentMode.Split)
+        {
+            _ = HighlightPreviewSearchAsync(string.Empty);
+        }
+    }
+
     private void HideSearch()
     {
+        ResetSearch();
         SearchBar.Visibility = Visibility.Collapsed;
-        UpdateEditorSearchHighlight();
         if (_mode is DocumentMode.Edit or DocumentMode.Split)
         {
             EditorTextBox.Focus();
@@ -1972,12 +1985,20 @@ public partial class MainWindow : Window
 
     private void ResetSearchButton_OnClick(object sender, RoutedEventArgs e)
     {
-        SearchTextBox.Clear();
-        _lastSearchIndex = -1;
-        _lastSearchLength = 0;
-        UpdateSearchStatus();
-        UpdateEditorSearchHighlight();
+        ResetSearch();
         SearchTextBox.Focus();
+    }
+
+    private void HandleSearchEscape()
+    {
+        if (!string.IsNullOrEmpty(SearchTextBox.Text))
+        {
+            ResetSearch();
+            SearchTextBox.Focus();
+            return;
+        }
+
+        HideSearch();
     }
 
     private void ShowReplace()
@@ -2035,6 +2056,13 @@ public partial class MainWindow : Window
 
     private void SearchTextBox_OnKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.Escape)
+        {
+            HandleSearchEscape();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.Enter)
         {
             Find(forward: !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift), keepSearchFocus: true);
@@ -3393,6 +3421,7 @@ public partial class MainWindow : Window
         ReplaceBar.BorderBrush = searchBorder;
         SearchLabelTextBlock.Foreground = searchForeground;
         SearchStatusTextBlock.Foreground = searchForeground;
+        SearchHintTextBlock.Foreground = Brush(dark ? "#9CA3AF" : "#64748B");
         foreach (var button in FindVisualChildren<System.Windows.Controls.Button>(SearchBar))
         {
             button.Background = Brush(dark ? "#1F2937" : "#FFFFFF");
@@ -3446,7 +3475,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.15.024";
+            return "2026.05.18.001";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
