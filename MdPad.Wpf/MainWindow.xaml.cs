@@ -33,6 +33,9 @@ public partial class MainWindow : Window
     private readonly SessionStateStore _sessionStateStore = new();
     private readonly Dictionary<Guid, PreviewCacheEntry> _previewCache = [];
     private readonly Dictionary<string, string> _localPreviewHosts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<Guid, FileSystemWatcher> _fileWatchers = [];
+    private readonly Dictionary<Guid, DispatcherTimer> _fileChangeTimers = [];
+    private readonly Dictionary<Guid, DateTime> _lastKnownFileWriteUtc = [];
     private readonly double[] _fontSizes = Enumerable.Range(8, 29).Select(size => (double)size).ToArray();
     private bool _isUpdatingEditor;
     private bool _isUpdatingStyleControls;
@@ -146,6 +149,7 @@ public partial class MainWindow : Window
         };
         tab.PropertyChanged += Tab_OnPropertyChanged;
         Tabs.Add(tab);
+        RegisterFileWatcher(tab);
         TabsListBox.SelectedItem = tab;
         QueueSessionSave();
     }
@@ -172,6 +176,11 @@ public partial class MainWindow : Window
         if (e.PropertyName == nameof(DocumentTab.DisplayTitle))
         {
             TabsListBox.Items.Refresh();
+        }
+
+        if (sender is DocumentTab tab && e.PropertyName == nameof(DocumentTab.FilePath))
+        {
+            RegisterFileWatcher(tab);
         }
 
         if (e.PropertyName is nameof(DocumentTab.DisplayTitle) or nameof(DocumentTab.Markdown) or nameof(DocumentTab.FilePath) or nameof(DocumentTab.IsDirty) or nameof(DocumentTab.CodeBlockStates))
@@ -370,10 +379,223 @@ public partial class MainWindow : Window
         tab.FilePath = path;
         tab.Title = Path.GetFileName(path);
         tab.MarkSaved();
+        MarkFileWriteKnown(tab);
         StatusTextBlock.Text = $"저장됨: {path}";
         UpdateTitle();
         QueueSessionSave();
         return true;
+    }
+
+    private void RegisterFileWatcher(DocumentTab tab)
+    {
+        UnregisterFileWatcher(tab);
+
+        if (string.IsNullOrWhiteSpace(tab.FilePath) || !File.Exists(tab.FilePath))
+        {
+            return;
+        }
+
+        var directory = Path.GetDirectoryName(tab.FilePath);
+        var fileName = Path.GetFileName(tab.FilePath);
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(fileName))
+        {
+            return;
+        }
+
+        try
+        {
+            var watcher = new FileSystemWatcher(directory, fileName)
+            {
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size | NotifyFilters.CreationTime,
+                IncludeSubdirectories = false,
+                EnableRaisingEvents = true,
+            };
+
+            watcher.Changed += (_, _) => ScheduleExternalFileRefresh(tab.Id);
+            watcher.Created += (_, _) => ScheduleExternalFileRefresh(tab.Id);
+            watcher.Renamed += (_, _) => ScheduleExternalFileRefresh(tab.Id);
+            watcher.Deleted += (_, _) => ScheduleExternalFileRefresh(tab.Id);
+            _fileWatchers[tab.Id] = watcher;
+            MarkFileWriteKnown(tab);
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"파일 감시 실패: {exception.Message}";
+        }
+    }
+
+    private void UnregisterFileWatcher(DocumentTab tab)
+    {
+        if (_fileWatchers.Remove(tab.Id, out var watcher))
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Dispose();
+        }
+
+        if (_fileChangeTimers.Remove(tab.Id, out var timer))
+        {
+            timer.Stop();
+        }
+
+        _lastKnownFileWriteUtc.Remove(tab.Id);
+    }
+
+    private void MarkFileWriteKnown(DocumentTab tab)
+    {
+        if (string.IsNullOrWhiteSpace(tab.FilePath) || !File.Exists(tab.FilePath))
+        {
+            return;
+        }
+
+        try
+        {
+            _lastKnownFileWriteUtc[tab.Id] = File.GetLastWriteTimeUtc(tab.FilePath);
+        }
+        catch
+        {
+            // A transient lock is harmless; the next watcher event will retry.
+        }
+    }
+
+    private void ScheduleExternalFileRefresh(Guid tabId)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_fileChangeTimers.TryGetValue(tabId, out var timer))
+            {
+                timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    ReloadTabFromDiskIfChanged(tabId);
+                };
+                _fileChangeTimers[tabId] = timer;
+            }
+
+            timer.Stop();
+            timer.Start();
+        });
+    }
+
+    private void ReloadTabFromDiskIfChanged(Guid tabId)
+    {
+        var tab = Tabs.FirstOrDefault(item => item.Id == tabId);
+        if (tab is null || string.IsNullOrWhiteSpace(tab.FilePath))
+        {
+            return;
+        }
+
+        var path = tab.FilePath;
+        if (!File.Exists(path))
+        {
+            StatusTextBlock.Text = $"파일이 삭제되었거나 이동됨: {path}";
+            return;
+        }
+
+        DateTime writeUtc;
+        try
+        {
+            writeUtc = File.GetLastWriteTimeUtc(path);
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"파일 변경 확인 실패: {exception.Message}";
+            return;
+        }
+
+        if (_lastKnownFileWriteUtc.TryGetValue(tab.Id, out var knownWriteUtc) &&
+            writeUtc <= knownWriteUtc.AddMilliseconds(20))
+        {
+            return;
+        }
+
+        if (!TryReadTextWithRetry(path, out var markdown, out var readError))
+        {
+            StatusTextBlock.Text = $"외부 변경 읽기 실패: {readError}";
+            return;
+        }
+
+        _lastKnownFileWriteUtc[tab.Id] = writeUtc;
+        if (string.Equals(tab.Markdown, markdown, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (tab.IsDirty)
+        {
+            StatusTextBlock.Text = $"외부 변경 감지됨. 저장 안 된 탭은 자동 갱신하지 않음: {Path.GetFileName(path)}";
+            return;
+        }
+
+        ApplyExternalFileContent(tab, markdown);
+        StatusTextBlock.Text = $"외부 변경 반영됨: {Path.GetFileName(path)}";
+    }
+
+    private static bool TryReadTextWithRetry(string path, out string text, out string error)
+    {
+        error = string.Empty;
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+                text = reader.ReadToEnd();
+                error = string.Empty;
+                return true;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                error = exception.Message;
+                Thread.Sleep(120);
+            }
+        }
+
+        text = string.Empty;
+        return false;
+    }
+
+    private void ApplyExternalFileContent(DocumentTab tab, string markdown)
+    {
+        tab.ReplaceSavedContent(markdown);
+        if (!string.IsNullOrWhiteSpace(tab.FilePath))
+        {
+            tab.Title = Path.GetFileName(tab.FilePath);
+        }
+
+        _previewCache.Remove(tab.Id);
+
+        if (CurrentTab?.Id == tab.Id)
+        {
+            var previousCaret = EditorTextBox.CaretIndex;
+            LoadCurrentTabIntoEditor();
+            EditorTextBox.CaretIndex = Math.Clamp(previousCaret, 0, EditorTextBox.Text.Length);
+            QueuePreviewRefresh();
+            UpdateTitle();
+            UpdateSearchStatus();
+        }
+
+        TabsListBox.Items.Refresh();
+        QueueSessionSave();
+    }
+
+    private void DisposeFileWatchers()
+    {
+        foreach (var timer in _fileChangeTimers.Values)
+        {
+            timer.Stop();
+        }
+
+        _fileChangeTimers.Clear();
+
+        foreach (var watcher in _fileWatchers.Values)
+        {
+            watcher.EnableRaisingEvents = false;
+            watcher.Dispose();
+        }
+
+        _fileWatchers.Clear();
+        _lastKnownFileWriteUtc.Clear();
     }
 
     private void CloseTabButton_OnClick(object sender, RoutedEventArgs e)
@@ -532,6 +754,7 @@ public partial class MainWindow : Window
         }
 
         _previewCache.Remove(tab.Id);
+        UnregisterFileWatcher(tab);
         tab.PropertyChanged -= Tab_OnPropertyChanged;
         var index = Tabs.IndexOf(tab);
         Tabs.Remove(tab);
@@ -3038,6 +3261,8 @@ public partial class MainWindow : Window
         {
             app.ExternalArgumentsReceived -= App_OnExternalArgumentsReceived;
         }
+
+        DisposeFileWatchers();
         _notifyIcon?.Dispose();
     }
 
@@ -3076,6 +3301,7 @@ public partial class MainWindow : Window
             };
             tab.PropertyChanged += Tab_OnPropertyChanged;
             Tabs.Add(tab);
+            RegisterFileWatcher(tab);
         }
 
         if (Tabs.Count == 0)
@@ -3475,7 +3701,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.18.001";
+            return "2026.05.20.001";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
@@ -3622,6 +3848,7 @@ public partial class MainWindow : Window
     {
         _isExitRequested = true;
         SaveSession();
+        DisposeFileWatchers();
         _notifyIcon?.Dispose();
         System.Windows.Application.Current.Shutdown();
     }

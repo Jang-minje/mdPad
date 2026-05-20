@@ -97,6 +97,18 @@ public sealed class DocumentTab : INotifyPropertyChanged
         IsDirty = false;
     }
 
+    public void ReplaceSavedContent(string markdown)
+    {
+        markdown ??= string.Empty;
+        if (!string.Equals(_markdown, markdown, StringComparison.Ordinal))
+        {
+            _markdown = markdown;
+            OnPropertyChanged(nameof(Markdown));
+        }
+
+        IsDirty = false;
+    }
+
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
