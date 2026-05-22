@@ -29,6 +29,10 @@ if errorlevel 1 exit /b %errorlevel%
 
 copy /Y "release\MdPadWv2-Setup-%APP_VERSION%.exe" "release\MdPadWv2-Setup.exe" >nul
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$nas='\\kait-nas\'+[char]0xacf5+[char]0xc6a9+'\UTIL'; function Stop-MdPadProcesses { Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'MdPadWv2-Setup*' -or $_.ProcessName -eq 'MdPad.Wpf' } | Stop-Process -Force -ErrorAction SilentlyContinue }; function Copy-WithRetry($src,$dst) { for ($i=1; $i -le 5; $i++) { try { Copy-Item -LiteralPath $src -Destination $dst -Force -ErrorAction Stop; return } catch { Stop-MdPadProcesses; Start-Sleep -Milliseconds (500 * $i); if ($i -eq 5) { throw } } } }; if (Test-Path $nas) { Stop-MdPadProcesses; Copy-WithRetry 'release\MdPadWv2-Setup-%APP_VERSION%.exe' (Join-Path $nas 'MdPadWv2-Setup-%APP_VERSION%.exe'); Copy-WithRetry 'release\MdPadWv2-Setup.exe' (Join-Path $nas 'MdPadWv2-Setup.exe') }"
+if errorlevel 1 exit /b %errorlevel%
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "function Stop-MdPadProcesses { Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -like 'MdPadWv2-Setup*' -or $_.ProcessName -eq 'MdPad.Wpf' } | Stop-Process -Force -ErrorAction SilentlyContinue }; Stop-MdPadProcesses; $setup = Resolve-Path 'release\MdPadWv2-Setup-%APP_VERSION%.exe'; $process = Start-Process -FilePath $setup -ArgumentList '/S' -PassThru; if (-not $process.WaitForExit(120000)) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue; throw 'Local silent install timed out.' }; if ($process.ExitCode -ne 0) { throw ('Local silent install failed: ' + $process.ExitCode) }"
+if errorlevel 1 exit /b %errorlevel%
 
 echo.
 echo Setup created: release\MdPadWv2-Setup-%APP_VERSION%.exe
