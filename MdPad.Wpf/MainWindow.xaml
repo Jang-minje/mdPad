@@ -437,6 +437,9 @@
                             <Border x:Name="TabRoot" MinWidth="145" MaxWidth="250" Height="28" Margin="0,0,-1,0" Padding="10,0,6,0" Background="{DynamicResource TabItemBackgroundBrush}" BorderBrush="{DynamicResource TabItemBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0" MouseLeftButtonDown="TabRoot_OnMouseLeftButtonDown">
                                 <Border.ContextMenu>
                                     <ContextMenu>
+                                        <MenuItem Header="탐색기에서 열기" Click="TabContextOpenInExplorerMenuItem_OnClick" />
+                                        <MenuItem Header="현재 경로주소 복사" Click="TabContextCopyPathMenuItem_OnClick" />
+                                        <Separator />
                                         <MenuItem Header="탭 닫기" Click="TabContextCloseMenuItem_OnClick" />
                                         <MenuItem Header="이 탭 기준 오른쪽 닫기" Click="TabContextCloseRightMenuItem_OnClick" />
                                         <MenuItem Header="전체 닫기" Click="TabContextCloseAllMenuItem_OnClick" />

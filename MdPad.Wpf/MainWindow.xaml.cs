@@ -714,6 +714,56 @@ public partial class MainWindow : Window
         }
     }
 
+    private void TabContextOpenInExplorerMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (GetTabFromContextMenu(sender) is not { } tab || string.IsNullOrWhiteSpace(tab.FilePath))
+        {
+            StatusTextBlock.Text = "저장된 파일 경로가 없는 탭입니다.";
+            return;
+        }
+
+        try
+        {
+            if (File.Exists(tab.FilePath))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{tab.FilePath}\"")
+                {
+                    UseShellExecute = true,
+                });
+                return;
+            }
+
+            var directory = Path.GetDirectoryName(tab.FilePath);
+            if (!string.IsNullOrWhiteSpace(directory) && Directory.Exists(directory))
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{directory}\"")
+                {
+                    UseShellExecute = true,
+                });
+                return;
+            }
+
+            StatusTextBlock.Text = $"경로를 찾을 수 없습니다: {tab.FilePath}";
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"탐색기 열기 실패: {exception.Message}";
+        }
+    }
+
+    private void TabContextCopyPathMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (GetTabFromContextMenu(sender) is not { } tab || string.IsNullOrWhiteSpace(tab.FilePath))
+        {
+            StatusTextBlock.Text = "복사할 파일 경로가 없는 탭입니다.";
+            return;
+        }
+
+        StatusTextBlock.Text = TrySetClipboardText(tab.FilePath, out var error)
+            ? "현재 경로주소 복사됨"
+            : $"경로 복사 실패: {error}";
+    }
+
     private void TabContextCloseMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         if (GetTabFromContextMenu(sender) is { } tab)
@@ -3714,7 +3764,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.22.001";
+            return "2026.05.22.002";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
