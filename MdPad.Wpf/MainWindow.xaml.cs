@@ -181,6 +181,11 @@ public partial class MainWindow : Window
         if (sender is DocumentTab tab && e.PropertyName == nameof(DocumentTab.FilePath))
         {
             RegisterFileWatcher(tab);
+            _previewCache.Remove(tab.Id);
+            if (CurrentTab?.Id == tab.Id)
+            {
+                QueuePreviewRefresh();
+            }
         }
 
         if (e.PropertyName is nameof(DocumentTab.DisplayTitle) or nameof(DocumentTab.Markdown) or nameof(DocumentTab.FilePath) or nameof(DocumentTab.IsDirty) or nameof(DocumentTab.CodeBlockStates))
@@ -2806,7 +2811,7 @@ public partial class MainWindow : Window
     private bool TryConvertLocalImageSource(string source, out string previewUrl)
     {
         previewUrl = string.Empty;
-        var path = TryGetLocalPathFromImageSource(source);
+        var path = TryGetLocalPathFromImageSource(source, CurrentTab?.FilePath);
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path) || !IsSupportedImageFile(path))
         {
             return false;
@@ -2816,7 +2821,7 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private static string? TryGetLocalPathFromImageSource(string source)
+    private static string? TryGetLocalPathFromImageSource(string source, string? markdownFilePath)
     {
         if (string.IsNullOrWhiteSpace(source) ||
             source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
@@ -2831,13 +2836,21 @@ public partial class MainWindow : Window
             return uri.LocalPath;
         }
 
-        var trimmed = source.Trim('"', '\'');
+        var trimmed = Uri.UnescapeDataString(source.Trim('"', '\''));
         if (Path.IsPathRooted(trimmed))
         {
             return trimmed;
         }
 
-        return null;
+        if (string.IsNullOrWhiteSpace(markdownFilePath))
+        {
+            return null;
+        }
+
+        var baseDirectory = Path.GetDirectoryName(markdownFilePath);
+        return string.IsNullOrWhiteSpace(baseDirectory)
+            ? null
+            : Path.GetFullPath(Path.Combine(baseDirectory, trimmed));
     }
 
     private string GetLocalPreviewUrl(string path)
@@ -3701,7 +3714,7 @@ public partial class MainWindow : Window
 
         if (string.IsNullOrWhiteSpace(informationalVersion))
         {
-            return "2026.05.20.001";
+            return "2026.05.22.001";
         }
 
         var metadataIndex = informationalVersion.IndexOf('+', StringComparison.Ordinal);
