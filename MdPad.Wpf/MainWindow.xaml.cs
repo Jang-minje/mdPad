@@ -27,10 +27,13 @@ namespace MdPad.Wpf;
 
 public partial class MainWindow : Window
 {
+    private const int MaxRecentDocuments = 12;
+    private static readonly TimeSpan TrashRetention = TimeSpan.FromDays(30);
     private readonly MarkdownRenderer _renderer = new();
     private readonly DispatcherTimer _previewDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
     private readonly DispatcherTimer _sessionSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
     private readonly SessionStateStore _sessionStateStore = new();
+    private readonly TrashDocumentStore _trashDocumentStore = new();
     private readonly Dictionary<Guid, PreviewCacheEntry> _previewCache = [];
     private readonly Dictionary<string, string> _localPreviewHosts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, FileSystemWatcher> _fileWatchers = [];
@@ -56,9 +59,17 @@ public partial class MainWindow : Window
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
     private SearchHighlightAdorner? _editorSearchAdorner;
+    private List<RecentDocument> _recentDocuments = [];
+    private List<TrashDocument> _trashDocuments = [];
     private string _lastRenderedHtml = string.Empty;
     private bool _isTabSwitcherOpen;
     private int _tabSwitcherIndex = -1;
+    private System.Windows.Point? _tabDragStartPoint;
+    private DocumentTab? _draggedTab;
+    private FrameworkElement? _draggedTabContainer;
+    private System.Windows.Media.TranslateTransform? _tabDragTransform;
+    private bool _isTabDragging;
+    private bool _tabOrderChangedDuringDrag;
 
     public MainWindow()
     {
@@ -223,6 +234,211 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void TabsListBox_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        FinishTabDrag(saveOrder: false);
+        _tabDragStartPoint = null;
+        _draggedTab = null;
+        _draggedTabContainer = null;
+
+        if (e.OriginalSource is DependencyObject source && FindVisualParent<System.Windows.Controls.Button>(source) is not null)
+        {
+            return;
+        }
+
+        var item = e.OriginalSource is DependencyObject dependencyObject
+            ? FindVisualParent<ListBoxItem>(dependencyObject)
+            : null;
+        if (item?.DataContext is not DocumentTab tab)
+        {
+            return;
+        }
+
+        _tabDragStartPoint = e.GetPosition(TabsListBox);
+        _draggedTab = tab;
+        _draggedTabContainer = item;
+    }
+
+    private void TabsListBox_OnPreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishTabDrag(saveOrder: true);
+            return;
+        }
+
+        if (_tabDragStartPoint is not { } startPoint || _draggedTab is null || _draggedTabContainer is null)
+        {
+            return;
+        }
+
+        var currentPoint = e.GetPosition(TabsListBox);
+        if (!_isTabDragging)
+        {
+            if (Math.Abs(currentPoint.X - startPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
+                Math.Abs(currentPoint.Y - startPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
+            {
+                return;
+            }
+
+            StartTabDrag();
+        }
+
+        if (_tabDragTransform is not null)
+        {
+            _tabDragTransform.X = currentPoint.X - startPoint.X;
+        }
+
+        MoveDraggedTabAcrossHalfPoint(currentPoint);
+        e.Handled = true;
+    }
+
+    private void TabsListBox_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_isTabDragging)
+        {
+            _tabDragStartPoint = null;
+            _draggedTab = null;
+            _draggedTabContainer = null;
+            return;
+        }
+
+        FinishTabDrag(saveOrder: true);
+        e.Handled = true;
+    }
+
+    private void TabsListBox_OnLostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_isTabDragging)
+        {
+            FinishTabDrag(saveOrder: true);
+        }
+    }
+
+    private void StartTabDrag()
+    {
+        if (_draggedTabContainer is null)
+        {
+            return;
+        }
+
+        _isTabDragging = true;
+        _tabOrderChangedDuringDrag = false;
+        _tabDragTransform = new System.Windows.Media.TranslateTransform(0, -2);
+        _draggedTabContainer.RenderTransform = _tabDragTransform;
+        _draggedTabContainer.Opacity = 0.92;
+        _draggedTabContainer.Effect = new System.Windows.Media.Effects.DropShadowEffect
+        {
+            BlurRadius = 12,
+            ShadowDepth = 2,
+            Opacity = 0.28,
+        };
+        System.Windows.Controls.Panel.SetZIndex(_draggedTabContainer, 100);
+        TabsListBox.CaptureMouse();
+        Mouse.OverrideCursor = System.Windows.Input.Cursors.SizeAll;
+    }
+
+    private void FinishTabDrag(bool saveOrder)
+    {
+        var wasDragging = _isTabDragging;
+        _isTabDragging = false;
+        ResetDraggedTabVisual();
+
+        if (TabsListBox.IsMouseCaptured)
+        {
+            TabsListBox.ReleaseMouseCapture();
+        }
+
+        Mouse.OverrideCursor = null;
+        if (wasDragging && saveOrder && _tabOrderChangedDuringDrag)
+        {
+            UpdateTabScrollButtons();
+            QueueSessionSave();
+        }
+
+        _tabDragStartPoint = null;
+        _draggedTab = null;
+        _draggedTabContainer = null;
+        _tabDragTransform = null;
+        _tabOrderChangedDuringDrag = false;
+    }
+
+    private void ResetDraggedTabVisual()
+    {
+        if (_draggedTabContainer is null)
+        {
+            return;
+        }
+
+        _draggedTabContainer.RenderTransform = null;
+        _draggedTabContainer.Opacity = 1;
+        _draggedTabContainer.Effect = null;
+        _draggedTabContainer.ClearValue(System.Windows.Controls.Panel.ZIndexProperty);
+    }
+
+    private void MoveDraggedTabAcrossHalfPoint(System.Windows.Point pointer)
+    {
+        if (_draggedTab is null || !Tabs.Contains(_draggedTab))
+        {
+            return;
+        }
+
+        var oldIndex = Tabs.IndexOf(_draggedTab);
+        if (oldIndex > 0 && IsPointerPastTabHalf(Tabs[oldIndex - 1], pointer, movingLeft: true))
+        {
+            MoveDraggedTab(oldIndex, oldIndex - 1, pointer);
+            return;
+        }
+
+        if (oldIndex < Tabs.Count - 1 && IsPointerPastTabHalf(Tabs[oldIndex + 1], pointer, movingLeft: false))
+        {
+            MoveDraggedTab(oldIndex, oldIndex + 1, pointer);
+        }
+    }
+
+    private bool IsPointerPastTabHalf(DocumentTab tab, System.Windows.Point pointer, bool movingLeft)
+    {
+        if (TabsListBox.ItemContainerGenerator.ContainerFromItem(tab) is not ListBoxItem item)
+        {
+            return false;
+        }
+
+        var bounds = item.TransformToAncestor(TabsListBox)
+            .TransformBounds(new Rect(new System.Windows.Point(0, 0), item.RenderSize));
+        var half = bounds.Left + (bounds.Width / 2);
+        return movingLeft ? pointer.X < half : pointer.X > half;
+    }
+
+    private void MoveDraggedTab(int oldIndex, int newIndex, System.Windows.Point pointer)
+    {
+        if (_draggedTab is null || oldIndex == newIndex)
+        {
+            return;
+        }
+
+        ResetDraggedTabVisual();
+        Tabs.Move(oldIndex, newIndex);
+        TabsListBox.SelectedItem = _draggedTab;
+        TabsListBox.UpdateLayout();
+        _draggedTabContainer = TabsListBox.ItemContainerGenerator.ContainerFromItem(_draggedTab) as FrameworkElement;
+        _tabDragStartPoint = pointer;
+        if (_draggedTabContainer is not null)
+        {
+            _tabDragTransform = new System.Windows.Media.TranslateTransform(0, -2);
+            _draggedTabContainer.RenderTransform = _tabDragTransform;
+            _draggedTabContainer.Opacity = 0.92;
+            _draggedTabContainer.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 12,
+                ShadowDepth = 2,
+                Opacity = 0.28,
+            };
+            System.Windows.Controls.Panel.SetZIndex(_draggedTabContainer, 100);
+        }
+
+        _tabOrderChangedDuringDrag = true;
+    }
+
     private void TabScrollLeftButton_OnClick(object sender, RoutedEventArgs e) => ScrollTabsBy(-180);
 
     private void TabScrollRightButton_OnClick(object sender, RoutedEventArgs e) => ScrollTabsBy(180);
@@ -337,6 +553,16 @@ public partial class MainWindow : Window
 
     private void OpenFileInTab(string path)
     {
+        path = Path.GetFullPath(path);
+        if (Tabs.FirstOrDefault(tab => !string.IsNullOrWhiteSpace(tab.FilePath) &&
+                string.Equals(Path.GetFullPath(tab.FilePath), path, StringComparison.OrdinalIgnoreCase)) is { } openTab)
+        {
+            TabsListBox.SelectedItem = openTab;
+            ReloadTabFromDiskIfChanged(openTab.Id);
+            AddRecentDocument(path);
+            return;
+        }
+
         var markdown = File.ReadAllText(path);
         var tab = new DocumentTab
         {
@@ -348,8 +574,10 @@ public partial class MainWindow : Window
             IsDirty = false,
         };
         tab.PropertyChanged += Tab_OnPropertyChanged;
+        RegisterFileWatcher(tab);
         Tabs.Add(tab);
         TabsListBox.SelectedItem = tab;
+        AddRecentDocument(path);
         QueueSessionSave();
     }
 
@@ -385,10 +613,239 @@ public partial class MainWindow : Window
         tab.Title = Path.GetFileName(path);
         tab.MarkSaved();
         MarkFileWriteKnown(tab);
+        AddRecentDocument(path);
         StatusTextBlock.Text = $"저장됨: {path}";
         UpdateTitle();
         QueueSessionSave();
         return true;
+    }
+
+    private void RecentDocumentMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string path)
+        {
+            return;
+        }
+
+        if (!File.Exists(path))
+        {
+            RemoveRecentDocument(path);
+            StatusTextBlock.Text = $"최근 문서를 찾을 수 없습니다: {path}";
+            System.Windows.MessageBox.Show(this, "파일을 찾을 수 없어 최근 문서 목록에서 제거했습니다.", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        try
+        {
+            OpenFileInTab(path);
+        }
+        catch (Exception exception)
+        {
+            StatusTextBlock.Text = $"최근 문서 열기 실패: {exception.Message}";
+            System.Windows.MessageBox.Show(this, $"파일을 열 수 없습니다.\n\n{exception.Message}", "MD Pad", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void ClearRecentDocumentsMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        _recentDocuments.Clear();
+        UpdateRecentDocumentsMenu();
+        QueueSessionSave();
+    }
+
+    private void AddRecentDocument(string path, bool queueSave = true)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        path = Path.GetFullPath(path);
+        _recentDocuments.RemoveAll(document => string.Equals(document.Path, path, StringComparison.OrdinalIgnoreCase));
+        _recentDocuments.Insert(0, new RecentDocument
+        {
+            Path = path,
+            LastOpenedUtc = DateTime.UtcNow,
+        });
+
+        if (_recentDocuments.Count > MaxRecentDocuments)
+        {
+            _recentDocuments = _recentDocuments.Take(MaxRecentDocuments).ToList();
+        }
+
+        UpdateRecentDocumentsMenu();
+        if (queueSave)
+        {
+            QueueSessionSave();
+        }
+    }
+
+    private void RemoveRecentDocument(string path)
+    {
+        _recentDocuments.RemoveAll(document => string.Equals(document.Path, path, StringComparison.OrdinalIgnoreCase));
+        UpdateRecentDocumentsMenu();
+        QueueSessionSave();
+    }
+
+    private void UpdateRecentDocumentsMenu()
+    {
+        RecentDocumentsMenuItem.Items.Clear();
+        var existingDocuments = _recentDocuments
+            .Where(document => !string.IsNullOrWhiteSpace(document.Path))
+            .OrderByDescending(document => document.LastOpenedUtc)
+            .Take(MaxRecentDocuments)
+            .ToList();
+
+        if (existingDocuments.Count == 0)
+        {
+            RecentDocumentsMenuItem.Items.Add(new MenuItem
+            {
+                Header = "최근 문서 없음",
+                IsEnabled = false,
+            });
+            return;
+        }
+
+        foreach (var document in existingDocuments)
+        {
+            var item = new MenuItem
+            {
+                Header = EscapeMenuHeader(Path.GetFileName(document.Path)),
+                ToolTip = document.Path,
+                Tag = document.Path,
+                InputGestureText = document.Path,
+            };
+            item.Click += RecentDocumentMenuItem_OnClick;
+            RecentDocumentsMenuItem.Items.Add(item);
+        }
+
+        RecentDocumentsMenuItem.Items.Add(new Separator());
+        var clearItem = new MenuItem
+        {
+            Header = "목록 지우기",
+        };
+        clearItem.Click += ClearRecentDocumentsMenuItem_OnClick;
+        RecentDocumentsMenuItem.Items.Add(clearItem);
+    }
+
+    private static string EscapeMenuHeader(string value) => string.IsNullOrWhiteSpace(value)
+        ? "(제목 없음)"
+        : value.Replace("_", "__", StringComparison.Ordinal);
+
+    private void TrashDocumentMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is not string id)
+        {
+            return;
+        }
+
+        var document = _trashDocuments.FirstOrDefault(item => item.Id == id);
+        if (document is null)
+        {
+            UpdateTrashDocumentsMenu();
+            return;
+        }
+
+        var tab = new DocumentTab
+        {
+            Title = string.IsNullOrWhiteSpace(document.Title) ? "Untitled" : document.Title,
+            FilePath = document.FilePath,
+            Markdown = document.Markdown ?? string.Empty,
+            FontFamily = string.IsNullOrWhiteSpace(document.FontFamily) ? _defaultStyle.FontFamily : document.FontFamily,
+            FontSize = document.FontSize <= 0 ? _defaultStyle.FontSize : document.FontSize,
+            CodeBlockStates = document.CodeBlockStates ?? [],
+            IsDirty = true,
+        };
+        tab.PropertyChanged += Tab_OnPropertyChanged;
+        Tabs.Add(tab);
+        RegisterFileWatcher(tab);
+        TabsListBox.SelectedItem = tab;
+
+        _trashDocumentStore.Delete(document.Id);
+        _trashDocuments.Remove(document);
+        UpdateTrashDocumentsMenu();
+        QueuePreviewRefresh();
+        QueueSessionSave();
+        StatusTextBlock.Text = $"휴지통에서 복원됨: {tab.Title}";
+    }
+
+    private void ClearTrashDocumentsMenuItem_OnClick(object sender, RoutedEventArgs e)
+    {
+        _trashDocumentStore.Clear(_trashDocuments);
+        _trashDocuments.Clear();
+        UpdateTrashDocumentsMenu();
+        StatusTextBlock.Text = "휴지통을 비웠습니다.";
+    }
+
+    private void AddTrashDocument(DocumentTab tab)
+    {
+        if (string.IsNullOrEmpty(tab.Markdown))
+        {
+            return;
+        }
+
+        var document = new TrashDocument
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Title = tab.Title,
+            FilePath = tab.FilePath,
+            Markdown = tab.Markdown,
+            DeletedAtUtc = DateTime.UtcNow,
+            FontFamily = tab.FontFamily,
+            FontSize = tab.FontSize,
+            CodeBlockStates = tab.CodeBlockStates,
+        };
+        _trashDocumentStore.Save(document);
+        _trashDocuments.Insert(0, document);
+        UpdateTrashDocumentsMenu();
+    }
+
+    private void UpdateTrashDocumentsMenu()
+    {
+        _trashDocuments = _trashDocuments
+            .Where(document => document.DeletedAtUtc >= DateTime.UtcNow.Subtract(TrashRetention))
+            .OrderByDescending(document => document.DeletedAtUtc)
+            .ToList();
+
+        TrashDocumentsMenuItem.Items.Clear();
+        TrashDocumentsMenuItem.Items.Add(new MenuItem
+        {
+            Header = "저장 안 함으로 닫은 문서를 30일 보관",
+            IsEnabled = false,
+        });
+        TrashDocumentsMenuItem.Items.Add(new Separator());
+
+        if (_trashDocuments.Count == 0)
+        {
+            TrashDocumentsMenuItem.Items.Add(new MenuItem
+            {
+                Header = "복원할 문서 없음",
+                IsEnabled = false,
+            });
+            return;
+        }
+
+        foreach (var document in _trashDocuments)
+        {
+            var deletedAt = document.DeletedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            var item = new MenuItem
+            {
+                Header = $"{EscapeMenuHeader(document.Title)} ({deletedAt})",
+                ToolTip = string.IsNullOrWhiteSpace(document.FilePath) ? "저장되지 않은 문서" : document.FilePath,
+                Tag = document.Id,
+                InputGestureText = "복원",
+            };
+            item.Click += TrashDocumentMenuItem_OnClick;
+            TrashDocumentsMenuItem.Items.Add(item);
+        }
+
+        TrashDocumentsMenuItem.Items.Add(new Separator());
+        var clearItem = new MenuItem
+        {
+            Header = "휴지통 비우기",
+        };
+        clearItem.Click += ClearTrashDocumentsMenuItem_OnClick;
+        TrashDocumentsMenuItem.Items.Add(clearItem);
     }
 
     private void RegisterFileWatcher(DocumentTab tab)
@@ -803,9 +1260,14 @@ public partial class MainWindow : Window
 
     private bool CloseTab(DocumentTab tab)
     {
-        if (!ConfirmSaveIfNeeded(tab))
+        if (!ConfirmSaveIfNeeded(tab, out var moveToTrash))
         {
             return false;
+        }
+
+        if (moveToTrash)
+        {
+            AddTrashDocument(tab);
         }
 
         _previewCache.Remove(tab.Id);
@@ -933,8 +1395,9 @@ public partial class MainWindow : Window
         _ = dialog.ShowDialog();
     }
 
-    private bool ConfirmSaveIfNeeded(DocumentTab tab)
+    private bool ConfirmSaveIfNeeded(DocumentTab tab, out bool moveToTrash)
     {
+        moveToTrash = false;
         if (!tab.IsDirty)
         {
             return true;
@@ -948,6 +1411,7 @@ public partial class MainWindow : Window
 
         if (result == MessageBoxResult.No)
         {
+            moveToTrash = true;
             return true;
         }
 
@@ -3343,6 +3807,8 @@ public partial class MainWindow : Window
         _defaultStyle = session.DefaultStyle ?? new EditorStyleSettings();
         _styleShortcuts = NormalizeShortcuts(session.StyleShortcuts);
         _appShortcuts = NormalizeShortcuts(session.AppShortcuts);
+        _recentDocuments = NormalizeRecentDocuments(session.RecentDocuments);
+        _trashDocuments = _trashDocumentStore.Load(TrashRetention);
         _defaultStyle.FontSize = Math.Clamp(_defaultStyle.FontSize, 8, 36);
         if (string.IsNullOrWhiteSpace(_defaultStyle.FontFamily))
         {
@@ -3367,8 +3833,18 @@ public partial class MainWindow : Window
             RegisterFileWatcher(tab);
         }
 
+        if (_recentDocuments.Count == 0)
+        {
+            foreach (var tab in Tabs.Where(tab => !string.IsNullOrWhiteSpace(tab.FilePath)))
+            {
+                AddRecentDocument(tab.FilePath!, queueSave: false);
+            }
+        }
+
         if (Tabs.Count == 0)
         {
+            UpdateRecentDocumentsMenu();
+            UpdateTrashDocumentsMenu();
             return;
         }
 
@@ -3376,6 +3852,8 @@ public partial class MainWindow : Window
         UpdateStyleControlsFromCurrentTab();
         UpdateStyleShortcutMenuText();
         UpdateAppShortcutMenuText();
+        UpdateRecentDocumentsMenu();
+        UpdateTrashDocumentsMenu();
     }
 
     private void QueueSessionSave()
@@ -3422,6 +3900,22 @@ public partial class MainWindow : Window
 
     private static bool IsValidShortcut(string value) => TryParseShortcut(value, out _, out _);
 
+    private static List<RecentDocument> NormalizeRecentDocuments(IEnumerable<RecentDocument>? recentDocuments)
+    {
+        if (recentDocuments is null)
+        {
+            return [];
+        }
+
+        return recentDocuments
+            .Where(document => !string.IsNullOrWhiteSpace(document.Path))
+            .GroupBy(document => Path.GetFullPath(document.Path), StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderByDescending(document => document.LastOpenedUtc).First())
+            .OrderByDescending(document => document.LastOpenedUtc)
+            .Take(MaxRecentDocuments)
+            .ToList();
+    }
+
     private void UpdateStyleShortcutMenuText()
     {
         TableInsertMenuItem.InputGestureText = _styleShortcuts.Table;
@@ -3461,6 +3955,11 @@ public partial class MainWindow : Window
             DefaultStyle = _defaultStyle,
             StyleShortcuts = _styleShortcuts,
             AppShortcuts = _appShortcuts,
+            RecentDocuments = _recentDocuments
+                .Where(document => !string.IsNullOrWhiteSpace(document.Path))
+                .OrderByDescending(document => document.LastOpenedUtc)
+                .Take(MaxRecentDocuments)
+                .ToList(),
             Documents = Tabs.Select(tab => new SessionDocument
             {
                 Id = tab.Id.ToString("N"),

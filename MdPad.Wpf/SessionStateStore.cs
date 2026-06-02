@@ -50,6 +50,7 @@ public sealed class SessionState
     public StyleShortcutSettings StyleShortcuts { get; set; } = new();
     public AppShortcutSettings AppShortcuts { get; set; } = new();
     public List<SessionDocument> Documents { get; set; } = [];
+    public List<RecentDocument> RecentDocuments { get; set; } = [];
 }
 
 public sealed class SessionDocument
@@ -62,6 +63,12 @@ public sealed class SessionDocument
     public string FontFamily { get; set; } = "Malgun Gothic";
     public double FontSize { get; set; } = 16;
     public Dictionary<string, CodeBlockViewState> CodeBlockStates { get; set; } = [];
+}
+
+public sealed class RecentDocument
+{
+    public string Path { get; set; } = string.Empty;
+    public DateTime LastOpenedUtc { get; set; } = DateTime.UtcNow;
 }
 
 public sealed class EditorStyleSettings

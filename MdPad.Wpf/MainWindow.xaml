@@ -19,10 +19,10 @@
         <SolidColorBrush x:Key="TextBrush" Color="#111827" />
         <SolidColorBrush x:Key="MutedTextBrush" Color="#5F6368" />
         <SolidColorBrush x:Key="MenuForegroundBrush" Color="#111827" />
-        <SolidColorBrush x:Key="ToolbarButtonBackgroundBrush" Color="#F8F8F8" />
-        <SolidColorBrush x:Key="ToolbarButtonHoverBrush" Color="#E7E7E7" />
-        <SolidColorBrush x:Key="ToolbarButtonPressedBrush" Color="#D8D8D8" />
-        <SolidColorBrush x:Key="ToolbarButtonBorderBrush" Color="#B8B8B8" />
+        <SolidColorBrush x:Key="ToolbarButtonBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="ToolbarButtonHoverBrush" Color="#EDF5FF" />
+        <SolidColorBrush x:Key="ToolbarButtonPressedBrush" Color="#DCEBFF" />
+        <SolidColorBrush x:Key="ToolbarButtonBorderBrush" Color="#C9D1D9" />
         <SolidColorBrush x:Key="ToolbarButtonForegroundBrush" Color="#111827" />
         <SolidColorBrush x:Key="ToolbarLabelBrush" Color="#404040" />
         <SolidColorBrush x:Key="TabItemBackgroundBrush" Color="#ECECEC" />
@@ -32,16 +32,17 @@
         <SolidColorBrush x:Key="TabItemBorderBrush" Color="#B8B8B8" />
 
         <Style x:Key="ToolbarButtonStyle" TargetType="Button">
-            <Setter Property="Height" Value="26" />
-            <Setter Property="MinWidth" Value="54" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinWidth" Value="58" />
             <Setter Property="Margin" Value="0,0,4,0" />
-            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="Padding" Value="9,0" />
             <Setter Property="Background" Value="{DynamicResource ToolbarButtonBackgroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource ToolbarButtonBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Foreground" Value="{DynamicResource ToolbarButtonForegroundBrush}" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTipService.ShowDuration" Value="12000" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
@@ -49,7 +50,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="2"
+                                CornerRadius="5"
                                 SnapsToDevicePixels="True">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center"
@@ -70,6 +71,13 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <Style x:Key="ToolbarIconTextStyle" TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe Fluent Icons" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
         <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource ToolbarButtonStyle}">
@@ -121,7 +129,7 @@
         </Style>
 
         <Style x:Key="ModeButtonStyle" TargetType="RadioButton">
-            <Setter Property="Height" Value="26" />
+            <Setter Property="Height" Value="28" />
             <Setter Property="MinWidth" Value="74" />
             <Setter Property="Padding" Value="8,0" />
             <Setter Property="Foreground" Value="{DynamicResource ToolbarButtonForegroundBrush}" />
@@ -131,7 +139,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Root" Background="Transparent" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="2">
+                        <Border x:Name="Root" Background="Transparent" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="5">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -187,6 +195,7 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
             <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Panel.ZIndex" Value="0" />
             <Setter Property="FocusVisualStyle" Value="{x:Null}" />
             <Setter Property="Template">
                 <Setter.Value>
@@ -195,6 +204,14 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Panel.ZIndex" Value="10" />
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Panel.ZIndex" Value="9" />
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <Style x:Key="TabScrollButtonStyle" TargetType="Button">
@@ -253,6 +270,8 @@
             <MenuItem Header="파일(_F)" ItemContainerStyle="{StaticResource DropDownMenuItemStyle}">
                 <MenuItem x:Name="NewTabMenuItem" Header="새 탭" InputGestureText="Ctrl+T" Click="NewButton_OnClick" />
                 <MenuItem Header="열기..." InputGestureText="Ctrl+O" Click="OpenButton_OnClick" />
+                <MenuItem x:Name="RecentDocumentsMenuItem" Header="최근 열었던 문서" />
+                <MenuItem x:Name="TrashDocumentsMenuItem" Header="휴지통" />
                 <Separator />
                 <MenuItem Header="저장" InputGestureText="Ctrl+S" Click="SaveButton_OnClick" />
                 <MenuItem Header="다른 이름으로 저장..." Click="SaveAsButton_OnClick" />
@@ -326,22 +345,87 @@
         <Border x:Name="ToolbarHost" Grid.Row="1" Background="{StaticResource ChromeBrush}" Padding="4,4">
             <DockPanel LastChildFill="False">
                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="NewButton_OnClick" Content="새 탭" MinWidth="64" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="OpenButton_OnClick" Content="열기" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="SaveButton_OnClick" Content="저장" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="SaveAsButton_OnClick" Content="다른 저장" MinWidth="72" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="CloseTabButton_OnClick" Content="닫기" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="NewButton_OnClick" MinWidth="70" ToolTip="새 탭">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE710;" />
+                            <TextBlock VerticalAlignment="Center" Text="새 탭" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="OpenButton_OnClick" ToolTip="파일 열기">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE8E5;" />
+                            <TextBlock VerticalAlignment="Center" Text="열기" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="SaveButton_OnClick" ToolTip="저장">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE74E;" />
+                            <TextBlock VerticalAlignment="Center" Text="저장" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="SaveAsButton_OnClick" MinWidth="86" ToolTip="다른 이름으로 저장">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE792;" />
+                            <TextBlock VerticalAlignment="Center" Text="다른 저장" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="CloseTabButton_OnClick" ToolTip="탭 닫기">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE711;" />
+                            <TextBlock VerticalAlignment="Center" Text="닫기" />
+                        </StackPanel>
+                    </Button>
                     <Rectangle Width="1" Fill="#4A4A4A" Margin="4,2,8,2" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertTableMenuItem_OnClick" Content="표" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertChecklistMenuItem_OnClick" Content="체크" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertCodeBlockMenuItem_OnClick" Content="코드" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertImageMenuItem_OnClick" Content="이미지" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertLinkMenuItem_OnClick" Content="링크" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertDividerMenuItem_OnClick" Content="구분선" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertTableMenuItem_OnClick" ToolTip="표 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE80A;" />
+                            <TextBlock VerticalAlignment="Center" Text="표" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertChecklistMenuItem_OnClick" ToolTip="체크리스트 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE73E;" />
+                            <TextBlock VerticalAlignment="Center" Text="체크" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertCodeBlockMenuItem_OnClick" ToolTip="코드블럭 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE943;" />
+                            <TextBlock VerticalAlignment="Center" Text="코드" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertImageMenuItem_OnClick" ToolTip="이미지 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xEB9F;" />
+                            <TextBlock VerticalAlignment="Center" Text="이미지" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertLinkMenuItem_OnClick" ToolTip="링크 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE71B;" />
+                            <TextBlock VerticalAlignment="Center" Text="링크" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Click="InsertDividerMenuItem_OnClick" ToolTip="구분선 삽입">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE949;" />
+                            <TextBlock VerticalAlignment="Center" Text="구분선" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="82" Click="CollapseAllCodeButton_OnClick" Content="코드 접기" />
-                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="82" Click="ExpandAllCodeButton_OnClick" Content="코드 펼치기" />
+                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="92" Click="CollapseAllCodeButton_OnClick" ToolTip="코드블럭 모두 접기">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE70D;" />
+                            <TextBlock VerticalAlignment="Center" Text="코드 접기" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="92" Click="ExpandAllCodeButton_OnClick" ToolTip="코드블럭 모두 펼치기">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE70E;" />
+                            <TextBlock VerticalAlignment="Center" Text="코드 펼치기" />
+                        </StackPanel>
+                    </Button>
                     <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
                         <RadioButton x:Name="EditModeButton" Style="{StaticResource ModeButtonStyle}" Checked="EditModeButton_OnChecked" Content="편집" />
                         <RadioButton x:Name="PreviewModeButton" Style="{StaticResource ModeButtonStyle}" Checked="PreviewModeButton_OnChecked" Content="미리보기" />
@@ -411,7 +495,7 @@
                 </StackPanel>
             </DockPanel>
         </Border>
-        <Border x:Name="TabBarHost" Grid.Row="3" Background="#252526" BorderBrush="#3E3E42" BorderThickness="0,1,0,1" Padding="0,2,0,0">
+        <Border x:Name="TabBarHost" Grid.Row="3" Background="#252526" BorderBrush="#3E3E42" BorderThickness="0,1,0,1" Padding="6,3,6,0">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="2,0,4,0">
                     <Button x:Name="TabScrollLeftButton" Style="{StaticResource TabScrollButtonStyle}" Click="TabScrollLeftButton_OnClick" Content="‹" />
@@ -421,6 +505,10 @@
                          ItemsSource="{Binding Tabs}"
                          SelectionChanged="TabsListBox_OnSelectionChanged"
                          PreviewMouseWheel="TabsListBox_OnPreviewMouseWheel"
+                         PreviewMouseLeftButtonDown="TabsListBox_OnPreviewMouseLeftButtonDown"
+                         PreviewMouseMove="TabsListBox_OnPreviewMouseMove"
+                         PreviewMouseLeftButtonUp="TabsListBox_OnPreviewMouseLeftButtonUp"
+                         LostMouseCapture="TabsListBox_OnLostMouseCapture"
                          Loaded="TabsListBox_OnLoaded"
                          ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                          ScrollViewer.VerticalScrollBarVisibility="Disabled"
@@ -434,7 +522,7 @@
                     </ListBox.ItemsPanel>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <Border x:Name="TabRoot" MinWidth="145" MaxWidth="250" Height="28" Margin="0,0,-1,0" Padding="10,0,6,0" Background="{DynamicResource TabItemBackgroundBrush}" BorderBrush="{DynamicResource TabItemBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0" MouseLeftButtonDown="TabRoot_OnMouseLeftButtonDown">
+                            <Border x:Name="TabRoot" MinWidth="145" MaxWidth="250" Height="29" Margin="0,0,-12,0" Padding="10,0,18,0" Background="{DynamicResource TabItemBackgroundBrush}" BorderBrush="{DynamicResource TabItemBorderBrush}" BorderThickness="1,1,1,0" CornerRadius="6,6,0,0" MouseLeftButtonDown="TabRoot_OnMouseLeftButtonDown">
                                 <Border.ContextMenu>
                                     <ContextMenu>
                                         <MenuItem Header="탐색기에서 열기" Click="TabContextOpenInExplorerMenuItem_OnClick" />
@@ -468,6 +556,8 @@
                                 <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                     <Setter TargetName="TabRoot" Property="Background" Value="{DynamicResource TabItemSelectedBackgroundBrush}" />
                                     <Setter TargetName="TabRoot" Property="BorderBrush" Value="{DynamicResource TabItemBorderBrush}" />
+                                    <Setter TargetName="TabRoot" Property="Height" Value="30" />
+                                    <Setter TargetName="TabRoot" Property="Margin" Value="0,0,-8,0" />
                                 </DataTrigger>
                             </DataTemplate.Triggers>
                         </DataTemplate>
