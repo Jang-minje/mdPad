@@ -130,8 +130,8 @@
 
         <Style x:Key="ModeButtonStyle" TargetType="RadioButton">
             <Setter Property="Height" Value="28" />
-            <Setter Property="MinWidth" Value="74" />
-            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="MinWidth" Value="66" />
+            <Setter Property="Padding" Value="7,0" />
             <Setter Property="Foreground" Value="{DynamicResource ToolbarButtonForegroundBrush}" />
             <Setter Property="BorderBrush" Value="{DynamicResource ToolbarButtonBorderBrush}" />
             <Setter Property="FontSize" Value="12" />
@@ -414,22 +414,37 @@
                     </Button>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="92" Click="CollapseAllCodeButton_OnClick" ToolTip="코드블럭 모두 접기">
+                    <Button x:Name="OutlineButton" Style="{StaticResource ToolbarButtonStyle}" MinWidth="72" Click="OutlineButton_OnClick" ToolTip="문서 목차 (Ctrl+Shift+O)">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE70D;" />
-                            <TextBlock VerticalAlignment="Center" Text="코드 접기" />
+                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE8FD;" />
+                            <TextBlock VerticalAlignment="Center" Text="목차" />
                         </StackPanel>
                     </Button>
-                    <Button Style="{StaticResource ToolbarButtonStyle}" MinWidth="92" Click="ExpandAllCodeButton_OnClick" ToolTip="코드블럭 모두 펼치기">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE70E;" />
-                            <TextBlock VerticalAlignment="Center" Text="코드 펼치기" />
-                        </StackPanel>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Width="34" MinWidth="34" Padding="0" Click="CollapseAllCodeButton_OnClick" ToolTip="코드블럭 모두 접기">
+                        <TextBlock FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" Text="&#xE70D;" />
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButtonStyle}" Width="34" MinWidth="34" Padding="0" Click="ExpandAllCodeButton_OnClick" ToolTip="코드블럭 모두 펼치기">
+                        <TextBlock FontFamily="Segoe Fluent Icons" FontSize="13" VerticalAlignment="Center" Text="&#xE70E;" />
                     </Button>
                     <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
-                        <RadioButton x:Name="EditModeButton" Style="{StaticResource ModeButtonStyle}" Checked="EditModeButton_OnChecked" Content="편집" />
-                        <RadioButton x:Name="PreviewModeButton" Style="{StaticResource ModeButtonStyle}" Checked="PreviewModeButton_OnChecked" Content="미리보기" />
-                        <RadioButton x:Name="SplitModeButton" Style="{StaticResource ModeButtonStyle}" Checked="SplitModeButton_OnChecked" Content="분할" />
+                        <RadioButton x:Name="EditModeButton" Style="{StaticResource ModeButtonStyle}" Checked="EditModeButton_OnChecked" ToolTip="편집 모드">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE70F;" />
+                                <TextBlock VerticalAlignment="Center" Text="편집" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="PreviewModeButton" Style="{StaticResource ModeButtonStyle}" Checked="PreviewModeButton_OnChecked" ToolTip="미리보기 모드">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE890;" />
+                                <TextBlock VerticalAlignment="Center" Text="보기" />
+                            </StackPanel>
+                        </RadioButton>
+                        <RadioButton x:Name="SplitModeButton" Style="{StaticResource ModeButtonStyle}" Checked="SplitModeButton_OnChecked" ToolTip="분할 모드">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Style="{StaticResource ToolbarIconTextStyle}" Text="&#xE8A9;" />
+                                <TextBlock VerticalAlignment="Center" Text="분할" />
+                            </StackPanel>
+                        </RadioButton>
                     </StackPanel>
                 </StackPanel>
             </DockPanel>
@@ -568,11 +583,87 @@
 
         <Grid x:Name="ContentGrid" Grid.Row="4" Margin="0" PreviewMouseWheel="ContentHost_OnPreviewMouseWheel" AllowDrop="True" PreviewDragOver="ContentHost_OnPreviewDragOver" PreviewDrop="ContentHost_OnPreviewDrop">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="OutlineColumn" Width="0" />
                 <ColumnDefinition x:Name="EditorColumn" Width="*" />
                 <ColumnDefinition x:Name="SplitSeparatorColumn" Width="0" />
                 <ColumnDefinition x:Name="PreviewColumn" Width="0" />
             </Grid.ColumnDefinitions>
-            <Border x:Name="EditorHost" Grid.Column="0" Background="#3B3B3B" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0">
+            <Border x:Name="DocumentOutlinePanel" Grid.Column="0" Background="#F4F4F4" BorderBrush="#C8C8C8" BorderThickness="0,0,1,0" Visibility="Collapsed">
+                <DockPanel>
+                    <Border DockPanel.Dock="Top" Background="#E8E8E8" BorderBrush="#C8C8C8" BorderThickness="0,0,0,1" Padding="9,6">
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right"
+                                    Width="22"
+                                    Height="22"
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Foreground="#333333"
+                                    Click="OutlineCloseButton_OnClick"
+                                    Content="×" />
+                            <TextBlock VerticalAlignment="Center" Foreground="#111827" FontWeight="SemiBold" Text="문서 목차" />
+                        </DockPanel>
+                    </Border>
+                    <Grid>
+                        <ListBox x:Name="DocumentOutlineListBox"
+                                 ItemsSource="{Binding DocumentHeadings}"
+                                 Background="#F4F4F4"
+                                 BorderThickness="0"
+                                 Foreground="#111827"
+                                 PreviewMouseLeftButtonUp="DocumentOutlineListBox_OnPreviewMouseLeftButtonUp"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="Foreground" Value="#111827" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Root" Background="{TemplateBinding Background}" Padding="10,7">
+                                                    <ContentPresenter />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Root" Property="Background" Value="#E8F1FF" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Root" Property="Background" Value="#D6E8FF" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <DockPanel LastChildFill="True">
+                                        <TextBlock DockPanel.Dock="Right"
+                                                   Margin="10,0,0,0"
+                                                   Foreground="#64748B"
+                                                   FontSize="11"
+                                                   Text="{Binding LineLabel}" />
+                                        <TextBlock Foreground="#111827"
+                                                   FontSize="13"
+                                                   Text="{Binding DisplayTitle}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock x:Name="DocumentOutlineEmptyTextBlock"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Foreground="#64748B"
+                                   Text="헤딩이 없습니다." />
+                    </Grid>
+                </DockPanel>
+            </Border>
+            <Border x:Name="EditorHost" Grid.Column="1" Background="#3B3B3B" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0">
                 <TextBox x:Name="EditorTextBox"
                          AllowDrop="True"
                          AcceptsReturn="True"
@@ -592,8 +683,8 @@
                          Padding="18,12"
                          TextWrapping="NoWrap" />
             </Border>
-            <GridSplitter x:Name="SplitGridSplitter" Grid.Column="1" Width="5" HorizontalAlignment="Stretch" Background="#3E3E42" Visibility="Collapsed" />
-            <Border x:Name="PreviewHost" Grid.Column="2" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed" AllowDrop="True" PreviewDragOver="ContentHost_OnPreviewDragOver" PreviewDrop="ContentHost_OnPreviewDrop">
+            <GridSplitter x:Name="SplitGridSplitter" Grid.Column="2" Width="5" HorizontalAlignment="Stretch" Background="#3E3E42" Visibility="Collapsed" />
+            <Border x:Name="PreviewHost" Grid.Column="3" Background="#FAFAFA" BorderBrush="#1E1E1E" BorderThickness="0" CornerRadius="0" Padding="0" Visibility="Collapsed" AllowDrop="True" PreviewDragOver="ContentHost_OnPreviewDragOver" PreviewDrop="ContentHost_OnPreviewDrop">
                 <wv2:WebView2 x:Name="PreviewWebView" DefaultBackgroundColor="#FFFAFAFA" NavigationCompleted="PreviewWebView_OnNavigationCompleted" AllowDrop="False" />
             </Border>
         </Grid>
@@ -682,5 +773,6 @@
                 </ListBox>
             </DockPanel>
         </Border>
+
     </Grid>
 </Window>

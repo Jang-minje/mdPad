@@ -70,6 +70,7 @@ public partial class MainWindow : Window
     private System.Windows.Media.TranslateTransform? _tabDragTransform;
     private bool _isTabDragging;
     private bool _tabOrderChangedDuringDrag;
+    private int? _pendingPreviewHeadingIndex;
 
     public MainWindow()
     {
@@ -92,6 +93,8 @@ public partial class MainWindow : Window
     }
 
     public ObservableCollection<DocumentTab> Tabs { get; }
+
+    public ObservableCollection<DocumentHeading> DocumentHeadings { get; } = [];
 
     private DocumentTab? CurrentTab => TabsListBox.SelectedItem as DocumentTab;
 
@@ -513,6 +516,7 @@ public partial class MainWindow : Window
         }
 
         UpdateEditorSearchHighlight();
+        UpdateDocumentOutline();
     }
 
     private void EditorTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
@@ -528,6 +532,175 @@ public partial class MainWindow : Window
         UpdateTitle();
         UpdateSearchStatus();
         UpdateEditorSearchHighlight();
+        UpdateDocumentOutline();
+    }
+
+    private void OutlineButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        UpdateDocumentOutline();
+        SetDocumentOutlineVisible(DocumentOutlinePanel.Visibility != Visibility.Visible);
+    }
+
+    private void OutlineCloseButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        SetDocumentOutlineVisible(false);
+    }
+
+    private void SetDocumentOutlineVisible(bool visible)
+    {
+        DocumentOutlinePanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        OutlineColumn.Width = visible ? new GridLength(240) : new GridLength(0);
+    }
+
+    private void DocumentOutlineListBox_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (FindVisualParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not { DataContext: DocumentHeading heading })
+        {
+            return;
+        }
+
+        NavigateToHeading(heading);
+        e.Handled = true;
+    }
+
+    private async void NavigateToHeading(DocumentHeading heading)
+    {
+        switch (_mode)
+        {
+            case DocumentMode.Edit:
+                NavigateEditorToHeading(heading);
+                break;
+            case DocumentMode.Preview:
+                await NavigatePreviewToHeadingAsync(heading);
+                break;
+            case DocumentMode.Split:
+                NavigateEditorToHeading(heading);
+                await NavigatePreviewToHeadingAsync(heading);
+                break;
+        }
+
+        StatusTextBlock.Text = $"이동: {heading.Title}";
+    }
+
+    private void NavigateEditorToHeading(DocumentHeading heading)
+    {
+        var target = Math.Clamp(heading.CharacterIndex, 0, EditorTextBox.Text.Length);
+        EditorTextBox.Focus();
+        EditorTextBox.Select(target, 0);
+        EditorTextBox.ScrollToLine(Math.Max(0, heading.LineNumber - 2));
+    }
+
+    private async Task NavigatePreviewToHeadingAsync(DocumentHeading heading)
+    {
+        if (!_isPreviewReady || PreviewWebView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        _pendingPreviewHeadingIndex = heading.HeadingIndex;
+        RefreshPreview();
+        await ScrollPreviewToHeadingAsync(heading.HeadingIndex);
+    }
+
+    private void UpdateDocumentOutline()
+    {
+        var headings = ParseDocumentHeadings(EditorTextBox.Text);
+        DocumentHeadings.Clear();
+        foreach (var heading in headings)
+        {
+            DocumentHeadings.Add(heading);
+        }
+
+        DocumentOutlineEmptyTextBlock.Visibility = DocumentHeadings.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static List<DocumentHeading> ParseDocumentHeadings(string? markdown)
+    {
+        var headings = new List<DocumentHeading>();
+        if (string.IsNullOrEmpty(markdown))
+        {
+            return headings;
+        }
+
+        var text = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
+        var inFence = false;
+        var fenceMarker = string.Empty;
+        var index = 0;
+        var lineNumber = 0;
+        while (index <= text.Length)
+        {
+            var lineEnd = text.IndexOf('\n', index);
+            var nextIndex = lineEnd < 0 ? text.Length + 1 : lineEnd + 1;
+            var line = text[index..(lineEnd < 0 ? text.Length : lineEnd)];
+            var trimmedStart = line.TrimStart();
+
+            if (TryGetFenceMarker(trimmedStart, out var marker))
+            {
+                if (!inFence)
+                {
+                    inFence = true;
+                    fenceMarker = marker;
+                }
+                else if (marker[0] == fenceMarker[0] && marker.Length >= fenceMarker.Length)
+                {
+                    inFence = false;
+                    fenceMarker = string.Empty;
+                }
+            }
+            else if (!inFence)
+            {
+                var match = Regex.Match(line, @"^\s{0,3}(#{1,6})(?!#)\s+(.+?)\s*#*\s*$");
+                if (match.Success)
+                {
+                    var title = match.Groups[2].Value.Trim();
+                    if (!string.IsNullOrWhiteSpace(title))
+                    {
+                        headings.Add(new DocumentHeading
+                        {
+                            HeadingIndex = headings.Count,
+                            Level = match.Groups[1].Value.Length,
+                            Title = title,
+                            LineNumber = lineNumber,
+                            CharacterIndex = index + match.Groups[0].Value.IndexOf('#'),
+                        });
+                    }
+                }
+            }
+
+            if (lineEnd < 0)
+            {
+                break;
+            }
+
+            index = nextIndex;
+            lineNumber++;
+        }
+
+        return headings;
+    }
+
+    private static bool TryGetFenceMarker(string line, out string marker)
+    {
+        marker = string.Empty;
+        if (line.Length < 3 || line[0] is not ('`' or '~'))
+        {
+            return false;
+        }
+
+        var fenceChar = line[0];
+        var length = 0;
+        while (length < line.Length && line[length] == fenceChar)
+        {
+            length++;
+        }
+
+        if (length < 3)
+        {
+            return false;
+        }
+
+        marker = line[..length];
+        return true;
     }
 
     private void NewButton_OnClick(object sender, RoutedEventArgs e) => AddNewTab();
@@ -1548,6 +1721,46 @@ public partial class MainWindow : Window
         {
             await HighlightPreviewSearchAsync(SearchTextBox.Text);
         }
+
+        if (_pendingPreviewHeadingIndex is { } headingIndex)
+        {
+            await ScrollPreviewToHeadingAsync(headingIndex);
+        }
+    }
+
+    private async Task ScrollPreviewToHeadingAsync(int headingIndex)
+    {
+        if (!_isPreviewReady || PreviewWebView.CoreWebView2 is null)
+        {
+            return;
+        }
+
+        var script = $$"""
+        (() => {
+          const headings = Array.from(document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6'));
+          const target = headings[{{headingIndex}}];
+          if (!target) return false;
+          target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
+          target.animate([
+            { backgroundColor: 'rgba(245, 158, 11, 0.35)' },
+            { backgroundColor: 'transparent' }
+          ], { duration: 900, easing: 'ease-out' });
+          return true;
+        })();
+        """;
+
+        try
+        {
+            var result = await PreviewWebView.CoreWebView2.ExecuteScriptAsync(script);
+            if (string.Equals(result, "true", StringComparison.OrdinalIgnoreCase))
+            {
+                _pendingPreviewHeadingIndex = null;
+            }
+        }
+        catch
+        {
+            // WebView may still be navigating; NavigationCompleted retries pending preview heading scroll.
+        }
     }
 
     private void PreviewWebView_OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -1678,9 +1891,23 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (Keyboard.Modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.O)
+        {
+            OutlineButton_OnClick(sender, e);
+            e.Handled = true;
+            return;
+        }
+
         if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.N)
         {
             AddNewTab();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Escape && DocumentOutlinePanel.Visibility == Visibility.Visible)
+        {
+            SetDocumentOutlineVisible(false);
             e.Handled = true;
             return;
         }
@@ -4194,6 +4421,11 @@ public partial class MainWindow : Window
         EditorTextBox.Background = editorBackground;
         EditorTextBox.Foreground = editorForeground;
         EditorTextBox.CaretBrush = editorForeground;
+        DocumentOutlinePanel.Background = Brush(dark ? "#1E1E1E" : "#F4F4F4");
+        DocumentOutlinePanel.BorderBrush = Brush(dark ? "#3E3E42" : "#C8C8C8");
+        DocumentOutlineListBox.Background = Brush(dark ? "#1E1E1E" : "#F4F4F4");
+        DocumentOutlineListBox.Foreground = Brush(dark ? "#F3F4F6" : "#111827");
+        DocumentOutlineEmptyTextBlock.Foreground = Brush(dark ? "#9CA3AF" : "#64748B");
         PreviewHost.Background = Brush(dark ? "#1E1E1E" : "#FAFAFA");
         PreviewWebView.DefaultBackgroundColor = dark
             ? System.Drawing.Color.FromArgb(255, 13, 17, 23)

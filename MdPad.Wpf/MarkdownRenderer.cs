@@ -33,7 +33,7 @@ public sealed class MarkdownRenderer
         double fontSize,
         IReadOnlyDictionary<string, CodeBlockViewState>? codeBlockStates = null)
     {
-        var articleHtml = Markdown.ToHtml(markdown ?? string.Empty, Pipeline);
+        var articleHtml = Markdown.ToHtml(PrepareMarkdownForRender(markdown), Pipeline);
         return JsonSerializer.Serialize(new
         {
             title = string.IsNullOrWhiteSpace(title) ? "MD Pad" : title,
@@ -42,6 +42,51 @@ public sealed class MarkdownRenderer
             fontSize,
             codeStates = codeBlockStates ?? new Dictionary<string, CodeBlockViewState>(),
         });
+    }
+
+    private static string PrepareMarkdownForRender(string? markdown)
+    {
+        if (string.IsNullOrEmpty(markdown))
+        {
+            return string.Empty;
+        }
+
+        return NormalizeLeadingThematicBreakBlock(markdown);
+    }
+
+    private static string NormalizeLeadingThematicBreakBlock(string markdown)
+    {
+        var offset = markdown.Length > 0 && markdown[0] == '\uFEFF' ? 1 : 0;
+        var firstLineEnd = markdown.IndexOf('\n', offset);
+        if (firstLineEnd < 0)
+        {
+            return markdown;
+        }
+
+        var firstLine = markdown[offset..firstLineEnd].TrimEnd('\r');
+        if (!string.Equals(firstLine.Trim(), "---", StringComparison.Ordinal))
+        {
+            return markdown;
+        }
+
+        var searchIndex = firstLineEnd + 1;
+        while (searchIndex < markdown.Length)
+        {
+            var lineEnd = markdown.IndexOf('\n', searchIndex);
+            var nextIndex = lineEnd < 0 ? markdown.Length : lineEnd + 1;
+            var line = markdown[searchIndex..(lineEnd < 0 ? markdown.Length : lineEnd)].TrimEnd('\r');
+            if (string.Equals(line.Trim(), "---", StringComparison.Ordinal))
+            {
+                var content = markdown[(firstLineEnd + 1)..searchIndex].TrimEnd('\r', '\n');
+                var body = markdown[nextIndex..].TrimStart('\r', '\n');
+                var prefix = offset == 1 ? "\uFEFF" : string.Empty;
+                return $"{prefix}---\n\n{content}\n\n---\n\n{body}";
+            }
+
+            searchIndex = nextIndex;
+        }
+
+        return markdown;
     }
 
     public string RenderDocument(
