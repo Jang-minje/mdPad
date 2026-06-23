@@ -28,6 +28,7 @@ namespace MdPad.Wpf;
 public partial class MainWindow : Window
 {
     private const int MaxRecentDocuments = 12;
+    private const string GitHubRepositoryUrl = "https://github.com/Jang-minje/mdPad";
     private static readonly TimeSpan TrashRetention = TimeSpan.FromDays(30);
     private readonly MarkdownRenderer _renderer = new();
     private readonly DispatcherTimer _previewDebounceTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
@@ -59,6 +60,8 @@ public partial class MainWindow : Window
     private Guid? _renderedPreviewTabId;
     private ScrollViewer? _tabsScrollViewer;
     private SearchHighlightAdorner? _editorSearchAdorner;
+    private RangeFlashAdorner? _editorRangeFlashAdorner;
+    private readonly DispatcherTimer _editorRangeFlashTimer = new() { Interval = TimeSpan.FromMilliseconds(1200) };
     private List<RecentDocument> _recentDocuments = [];
     private List<TrashDocument> _trashDocuments = [];
     private string _lastRenderedHtml = string.Empty;
@@ -70,7 +73,8 @@ public partial class MainWindow : Window
     private System.Windows.Media.TranslateTransform? _tabDragTransform;
     private bool _isTabDragging;
     private bool _tabOrderChangedDuringDrag;
-    private int? _pendingPreviewHeadingIndex;
+    private string? _pendingPreviewTargetKind;
+    private int? _pendingPreviewTargetIndex;
 
     public MainWindow()
     {
@@ -86,6 +90,11 @@ public partial class MainWindow : Window
         {
             _sessionSaveTimer.Stop();
             SaveSession();
+        };
+        _editorRangeFlashTimer.Tick += (_, _) =>
+        {
+            _editorRangeFlashTimer.Stop();
+            ClearEditorRangeFlash();
         };
         Loaded += MainWindow_OnLoaded;
         PreviewKeyDown += MainWindow_OnPreviewKeyDown;
@@ -588,6 +597,44 @@ public partial class MainWindow : Window
         EditorTextBox.Focus();
         EditorTextBox.Select(target, 0);
         EditorTextBox.ScrollToLine(Math.Max(0, heading.LineNumber - 2));
+        if (heading.PreviewTargetKind == "code")
+        {
+            FlashEditorRange(target, heading.HighlightLength);
+        }
+    }
+
+    private void FlashEditorRange(int start, int length)
+    {
+        if (length <= 0)
+        {
+            return;
+        }
+
+        var layer = AdornerLayer.GetAdornerLayer(EditorTextBox);
+        if (layer is null)
+        {
+            return;
+        }
+
+        ClearEditorRangeFlash();
+        _editorRangeFlashAdorner = new RangeFlashAdorner(EditorTextBox);
+        layer.Add(_editorRangeFlashAdorner);
+        _editorRangeFlashAdorner.Update(start, length, _theme == ThemeMode.Dark);
+        _editorRangeFlashTimer.Stop();
+        _editorRangeFlashTimer.Start();
+    }
+
+    private void ClearEditorRangeFlash()
+    {
+        _editorRangeFlashTimer.Stop();
+        if (_editorRangeFlashAdorner is null)
+        {
+            return;
+        }
+
+        var layer = AdornerLayer.GetAdornerLayer(EditorTextBox);
+        layer?.Remove(_editorRangeFlashAdorner);
+        _editorRangeFlashAdorner = null;
     }
 
     private async Task NavigatePreviewToHeadingAsync(DocumentHeading heading)
@@ -597,9 +644,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        _pendingPreviewHeadingIndex = heading.HeadingIndex;
+        _pendingPreviewTargetKind = heading.PreviewTargetKind;
+        _pendingPreviewTargetIndex = heading.PreviewTargetIndex;
         RefreshPreview();
-        await ScrollPreviewToHeadingAsync(heading.HeadingIndex);
+        await ScrollPreviewToTargetAsync(heading.PreviewTargetKind, heading.PreviewTargetIndex);
     }
 
     private void UpdateDocumentOutline()
@@ -625,6 +673,11 @@ public partial class MainWindow : Window
         var text = markdown.Replace("\r\n", "\n").Replace('\r', '\n');
         var inFence = false;
         var fenceMarker = string.Empty;
+        var fenceStartIndex = 0;
+        var fenceContentStartIndex = 0;
+        var fenceStartLineNumber = 0;
+        var codeBlockIndex = 0;
+        var currentHeadingLevel = 0;
         var index = 0;
         var lineNumber = 0;
         while (index <= text.Length)
@@ -640,9 +693,33 @@ public partial class MainWindow : Window
                 {
                     inFence = true;
                     fenceMarker = marker;
+                    fenceStartIndex = index;
+                    fenceContentStartIndex = nextIndex <= text.Length ? nextIndex : text.Length;
+                    fenceStartLineNumber = lineNumber;
                 }
                 else if (marker[0] == fenceMarker[0] && marker.Length >= fenceMarker.Length)
                 {
+                    var codeText = fenceContentStartIndex <= index
+                        ? text[fenceContentStartIndex..index].TrimEnd('\n')
+                        : string.Empty;
+                    var codeTitle = GetCodeBlockOutlineTitle(codeText);
+                    if (!string.IsNullOrWhiteSpace(codeTitle))
+                    {
+                        var firstCodeLineLength = GetFirstLineLength(codeText);
+                        headings.Add(new DocumentHeading
+                        {
+                            HeadingIndex = headings.Count(item => item.PreviewTargetKind == "heading"),
+                            PreviewTargetKind = "code",
+                            PreviewTargetIndex = codeBlockIndex,
+                            Level = Math.Clamp(currentHeadingLevel + 1, 1, 6),
+                            Title = codeTitle,
+                            LineNumber = fenceStartLineNumber + 1,
+                            CharacterIndex = fenceContentStartIndex,
+                            HighlightLength = firstCodeLineLength,
+                        });
+                    }
+
+                    codeBlockIndex++;
                     inFence = false;
                     fenceMarker = string.Empty;
                 }
@@ -657,12 +734,16 @@ public partial class MainWindow : Window
                     {
                         headings.Add(new DocumentHeading
                         {
-                            HeadingIndex = headings.Count,
+                            HeadingIndex = headings.Count(item => item.PreviewTargetKind == "heading"),
+                            PreviewTargetKind = "heading",
+                            PreviewTargetIndex = headings.Count(item => item.PreviewTargetKind == "heading"),
                             Level = match.Groups[1].Value.Length,
                             Title = title,
                             LineNumber = lineNumber,
                             CharacterIndex = index + match.Groups[0].Value.IndexOf('#'),
+                            HighlightLength = match.Groups[0].Value.Length,
                         });
+                        currentHeadingLevel = match.Groups[1].Value.Length;
                     }
                 }
             }
@@ -677,6 +758,45 @@ public partial class MainWindow : Window
         }
 
         return headings;
+    }
+
+    private static string GetCodeBlockOutlineTitle(string codeText)
+    {
+        var first = ((codeText ?? string.Empty).Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').FirstOrDefault() ?? string.Empty).Trim();
+        if (first.StartsWith("--", StringComparison.Ordinal))
+        {
+            return first[2..].Trim();
+        }
+
+        if (first.StartsWith('#'))
+        {
+            return Regex.Replace(first, "^#+\\s*", string.Empty).Trim();
+        }
+
+        if (first.StartsWith("//", StringComparison.Ordinal))
+        {
+            return first[2..].Trim();
+        }
+
+        if (first.StartsWith("/*", StringComparison.Ordinal))
+        {
+            return Regex.Replace(first, "^/\\*\\s*", string.Empty)
+                .Replace("*/", string.Empty, StringComparison.Ordinal)
+                .Trim();
+        }
+
+        return string.Empty;
+    }
+
+    private static int GetFirstLineLength(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return 0;
+        }
+
+        var lineEnd = text.IndexOf('\n');
+        return Math.Max(0, lineEnd < 0 ? text.Length : lineEnd);
     }
 
     private static bool TryGetFenceMarker(string line, out string marker)
@@ -1722,29 +1842,42 @@ public partial class MainWindow : Window
             await HighlightPreviewSearchAsync(SearchTextBox.Text);
         }
 
-        if (_pendingPreviewHeadingIndex is { } headingIndex)
+        if (_pendingPreviewTargetKind is not null && _pendingPreviewTargetIndex is { } targetIndex)
         {
-            await ScrollPreviewToHeadingAsync(headingIndex);
+            await ScrollPreviewToTargetAsync(_pendingPreviewTargetKind, targetIndex);
         }
     }
 
-    private async Task ScrollPreviewToHeadingAsync(int headingIndex)
+    private async Task ScrollPreviewToTargetAsync(string targetKind, int targetIndex)
     {
         if (!_isPreviewReady || PreviewWebView.CoreWebView2 is null)
         {
             return;
         }
 
+        var selector = targetKind == "code"
+            ? ".markdown-body .code-wrap"
+            : ".markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6";
+        var selectorJson = JsonSerializer.Serialize(selector);
+        var targetKindJson = JsonSerializer.Serialize(targetKind);
         var script = $$"""
         (() => {
-          const headings = Array.from(document.querySelectorAll('.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6'));
-          const target = headings[{{headingIndex}}];
+          const targets = Array.from(document.querySelectorAll({{selectorJson}}));
+          const target = targets[{{targetIndex}}];
           if (!target) return false;
           target.scrollIntoView({ block: 'start', inline: 'nearest', behavior: 'smooth' });
-          target.animate([
-            { backgroundColor: 'rgba(245, 158, 11, 0.35)' },
-            { backgroundColor: 'transparent' }
-          ], { duration: 900, easing: 'ease-out' });
+          if ({{targetKindJson}} === 'code') {
+            target.animate([
+              { boxShadow: '0 0 0 0 rgba(245, 158, 11, 0)', borderColor: 'rgba(245, 158, 11, 0.95)' },
+              { boxShadow: '0 0 0 5px rgba(245, 158, 11, 0.45)', borderColor: 'rgba(245, 158, 11, 0.95)' },
+              { boxShadow: '0 0 0 0 rgba(245, 158, 11, 0)', borderColor: '' }
+            ], { duration: 1200, easing: 'ease-out' });
+          } else {
+            target.animate([
+              { backgroundColor: 'rgba(245, 158, 11, 0.35)' },
+              { backgroundColor: 'transparent' }
+            ], { duration: 900, easing: 'ease-out' });
+          }
           return true;
         })();
         """;
@@ -1754,7 +1887,8 @@ public partial class MainWindow : Window
             var result = await PreviewWebView.CoreWebView2.ExecuteScriptAsync(script);
             if (string.Equals(result, "true", StringComparison.OrdinalIgnoreCase))
             {
-                _pendingPreviewHeadingIndex = null;
+                _pendingPreviewTargetKind = null;
+                _pendingPreviewTargetIndex = null;
             }
         }
         catch
@@ -2754,12 +2888,103 @@ public partial class MainWindow : Window
     private void VersionInfoMenuItem_OnClick(object sender, RoutedEventArgs e)
     {
         var version = GetAppVersion();
-        System.Windows.MessageBox.Show(
-            this,
-            $"MD Pad WV2\n버전: {version}",
-            "버전 정보",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        ShowVersionInfoDialog(version);
+    }
+
+    private void ShowVersionInfoDialog(string version)
+    {
+        var dialog = new Window
+        {
+            Title = "버전 정보",
+            Owner = this,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            ResizeMode = ResizeMode.NoResize,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            Background = Brush(_theme == ThemeMode.Dark ? "#1E1E1E" : "#FFFFFF"),
+        };
+
+        var foreground = Brush(_theme == ThemeMode.Dark ? "#F3F4F6" : "#111827");
+        var muted = Brush(_theme == ThemeMode.Dark ? "#CBD5E1" : "#64748B");
+        var linkBrush = Brush(_theme == ThemeMode.Dark ? "#7DD3FC" : "#0969DA");
+        var panel = new StackPanel
+        {
+            Width = 420,
+            Margin = new Thickness(22),
+        };
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "MD Pad WV2",
+            FontSize = 20,
+            FontWeight = FontWeights.SemiBold,
+            Foreground = foreground,
+        });
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"버전: {version}",
+            Margin = new Thickness(0, 6, 0, 18),
+            Foreground = muted,
+        });
+
+        var githubRow = new StackPanel
+        {
+            Orientation = System.Windows.Controls.Orientation.Horizontal,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 18),
+        };
+        githubRow.Children.Add(CreateGitHubIcon(foreground));
+
+        var linkButton = new System.Windows.Controls.Button
+        {
+            Content = GitHubRepositoryUrl,
+            Margin = new Thickness(10, 0, 0, 0),
+            Padding = new Thickness(0),
+            Background = System.Windows.Media.Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Foreground = linkBrush,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        linkButton.Click += (_, _) => OpenExternalUrl(GitHubRepositoryUrl);
+        githubRow.Children.Add(linkButton);
+        panel.Children.Add(githubRow);
+
+        var closeButton = new System.Windows.Controls.Button
+        {
+            Content = "확인",
+            Width = 82,
+            Height = 30,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+            IsDefault = true,
+        };
+        closeButton.Click += (_, _) => dialog.Close();
+        panel.Children.Add(closeButton);
+
+        dialog.Content = panel;
+        dialog.ShowDialog();
+    }
+
+    private static FrameworkElement CreateGitHubIcon(System.Windows.Media.Brush foreground)
+    {
+        return new Viewbox
+        {
+            Width = 22,
+            Height = 22,
+            Child = new System.Windows.Shapes.Path
+            {
+                Fill = foreground,
+                Data = System.Windows.Media.Geometry.Parse("M12 0.5C5.65 0.5 0.5 5.65 0.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .96-.31 3.15 1.18.91-.25 1.89-.38 2.86-.38.97 0 1.95.13 2.86.38 2.19-1.49 3.15-1.18 3.15-1.18.62 1.58.23 2.75.11 3.04.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.41.35.78 1.05.78 2.12 0 1.53-.01 2.76-.01 3.14 0 .31.21.68.8.56A11.52 11.52 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"),
+                Stretch = System.Windows.Media.Stretch.Uniform,
+            },
+        };
+    }
+
+    private static void OpenExternalUrl(string url)
+    {
+        Process.Start(new ProcessStartInfo(url)
+        {
+            UseShellExecute = true,
+        });
     }
 
     private void OpenSourceLicensesMenuItem_OnClick(object sender, RoutedEventArgs e)
@@ -4841,5 +5066,60 @@ public sealed class SearchHighlightAdorner : Adorner
         var width = Math.Max(4, Math.Min(_textBox.ActualWidth, endRect.Right) - x);
         var height = Math.Max(2, startRect.Height);
         drawingContext.DrawRoundedRectangle(brush, null, new Rect(x, y, width, height), 2, 2);
+    }
+}
+
+public sealed class RangeFlashAdorner : Adorner
+{
+    private readonly System.Windows.Controls.TextBox _textBox;
+    private int _start;
+    private int _length;
+    private bool _dark;
+
+    public RangeFlashAdorner(System.Windows.Controls.TextBox textBox) : base(textBox)
+    {
+        _textBox = textBox;
+        IsHitTestVisible = false;
+    }
+
+    public void Update(int start, int length, bool dark)
+    {
+        _start = start;
+        _length = length;
+        _dark = dark;
+        InvalidateVisual();
+    }
+
+    protected override void OnRender(System.Windows.Media.DrawingContext drawingContext)
+    {
+        base.OnRender(drawingContext);
+        if (_length <= 0 || string.IsNullOrEmpty(_textBox.Text))
+        {
+            return;
+        }
+
+        var brush = new System.Windows.Media.SolidColorBrush(_dark
+            ? System.Windows.Media.Color.FromArgb(170, 245, 158, 11)
+            : System.Windows.Media.Color.FromArgb(150, 245, 158, 11));
+        var pen = new System.Windows.Media.Pen(new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(220, 245, 158, 11)), 1.4);
+        brush.Freeze();
+        pen.Freeze();
+
+        var start = Math.Clamp(_start, 0, Math.Max(0, _textBox.Text.Length - 1));
+        var end = Math.Clamp(start + Math.Max(1, _length) - 1, 0, Math.Max(0, _textBox.Text.Length - 1));
+        var startRect = _textBox.GetRectFromCharacterIndex(start, false);
+        var endRect = _textBox.GetRectFromCharacterIndex(end, true);
+        if (startRect.IsEmpty || endRect.IsEmpty ||
+            double.IsInfinity(startRect.X) || double.IsInfinity(endRect.X) ||
+            startRect.Bottom < 0 || startRect.Top > _textBox.ActualHeight)
+        {
+            return;
+        }
+
+        var x = Math.Max(0, startRect.X);
+        var y = Math.Max(0, startRect.Y);
+        var width = Math.Max(10, Math.Min(_textBox.ActualWidth, endRect.Right) - x);
+        var height = Math.Max(4, startRect.Height);
+        drawingContext.DrawRoundedRectangle(brush, pen, new Rect(x, y, width, height), 3, 3);
     }
 }

@@ -136,10 +136,13 @@ public sealed class CodeBlockViewState
 public sealed class DocumentHeading
 {
     public int HeadingIndex { get; init; }
+    public int PreviewTargetIndex { get; init; }
+    public string PreviewTargetKind { get; init; } = "heading";
     public int Level { get; init; }
     public string Title { get; init; } = string.Empty;
     public int LineNumber { get; init; }
     public int CharacterIndex { get; init; }
+    public int HighlightLength { get; init; }
     public string DisplayTitle => $"{new string(' ', Math.Max(0, Level - 1) * 2)}{Title}";
     public string LineLabel => $"L{LineNumber + 1}";
 }

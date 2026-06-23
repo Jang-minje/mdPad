@@ -9,6 +9,7 @@ release/
 *.log
 *.tmp
 *.bak
+build.bat
 *.nupkg
 TestResults/
 *.WebView2/

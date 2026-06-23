@@ -430,6 +430,7 @@ public sealed class MarkdownRenderer
                 const first = ((text || '').split(/\r?\n/)[0] || '').trim();
                 if (first.startsWith('--')) return first.slice(2).trim();
                 if (first.startsWith('#')) return first.replace(/^#+\s*/, '').trim();
+                if (first.startsWith('//')) return first.slice(2).trim();
                 if (first.startsWith('/*')) return first.replace(/^\/\*\s*/, '').replace(/\s*\*\/$/, '').trim();
                 return '';
               };
